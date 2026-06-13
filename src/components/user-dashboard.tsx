@@ -1,87 +1,145 @@
-"use client";
-
-import { useState } from "react";
+import Link from "next/link";
 import {
-  Bell, Check, ChevronRight, Circle, Download, FilePlus2, FileText,
-  FolderOpen, LayoutDashboard, MessageSquare, PenLine, Scale, WalletCards,
+  ArrowRight,
+  BarChart3,
+  BriefcaseBusiness,
+  FileCheck2,
+  FilePlus2,
+  FileSearch,
+  FileText,
+  FolderOpen,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 
-const statuses = [
-  "Documenti ricevuti", "Screening AI completato", "In revisione", "Ricorso in preparazione",
-  "In attesa firma procura", "Depositato / inviato", "In attesa decisione", "Concluso",
+const practiceStatuses = [
+  "Caricato",
+  "Analizzato",
+  "Da approfondire",
+  "Consulenza richiesta",
+  "Chiuso",
+];
+
+const sections = [
+  [FileSearch, "Le mie analisi", "0", "Screening preliminari avviati"],
+  [FileText, "Verbali caricati", "0", "Documenti presenti nell’area"],
+  [FileCheck2, "Report disponibili", "0", "Report pronti da consultare"],
 ];
 
 export function UserDashboard() {
-  const [signed, setSigned] = useState(false);
-
   return (
-    <section className="bg-[#f4f7f6] py-8 sm:py-12">
+    <section className="min-h-[70vh] bg-[#f4f7f6] py-10 sm:py-14">
       <div className="page-shell">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-sm text-slate-500">Bentornato, Mario</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">La tua area riservata</h1></div>
-          <Button className="rounded-full bg-[#103d3a]"><FilePlus2 className="size-4" /> Nuova pratica</Button>
+        <div className="flex flex-col gap-5 rounded-[2rem] bg-[#103d3a] p-7 text-white sm:flex-row sm:items-end sm:justify-between sm:p-10">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-lime-300">
+              Area MulteOnline
+            </p>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
+              Le tue analisi, in un unico posto
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
+              Consulta i verbali caricati, i report disponibili e lo stato di
+              eventuali richieste di approfondimento professionale.
+            </p>
+          </div>
+          <Button
+            className="h-12 shrink-0 rounded-full bg-lime-300 px-6 font-semibold text-[#153a35] hover:bg-lime-200"
+            asChild
+          >
+            <Link href="/analizza">
+              <FilePlus2 className="size-4" /> Carica una multa
+            </Link>
+          </Button>
         </div>
-        <div className="grid gap-7 lg:grid-cols-[220px_1fr]">
-          <aside className="h-fit rounded-2xl border bg-white p-3 lg:sticky lg:top-24">
-            {[
-              [LayoutDashboard, "Panoramica"], [FolderOpen, "Le mie pratiche"], [FileText, "Documenti"],
-              [MessageSquare, "Messaggi"], [WalletCards, "Pagamenti"],
-            ].map(([Icon, label], index) => (
-              <button key={String(label)} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium ${index === 0 ? "bg-[#eaf3f0] text-[#0f5752]" : "text-slate-600 hover:bg-slate-50"}`}>
-                <Icon className="size-4" />{label as string}
-              </button>
-            ))}
-          </aside>
-          <div className="space-y-7">
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Stat label="Pratiche attive" value="1" icon={FolderOpen} />
-              <Stat label="Documenti" value="7" icon={FileText} />
-              <Stat label="Nuovi messaggi" value="2" icon={Bell} />
-            </div>
-            <div className="rounded-2xl border bg-white p-6 sm:p-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div><div className="flex items-center gap-3"><Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">In revisione</Badge><span className="font-mono text-xs text-slate-400">RF-2026-01842</span></div><h2 className="mt-4 text-xl font-semibold">Verbale Polizia Locale di Roma</h2><p className="mt-2 text-sm text-slate-500">Autovelox · Importo €173,00 · Notifica 12/05/2026</p></div>
-                <Button variant="outline" className="rounded-full">Apri pratica <ChevronRight className="size-4" /></Button>
+
+        <div className="mt-7 grid gap-5 md:grid-cols-3">
+          {sections.map(([Icon, title, value, note]) => (
+            <article key={String(title)} className="rounded-2xl border bg-white p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-600">{title as string}</p>
+                  <p className="mt-3 text-4xl font-semibold">{value as string}</p>
+                </div>
+                <span className="grid size-11 place-items-center rounded-xl bg-[#e8f2ef] text-[#0f756d]">
+                  <Icon className="size-5" />
+                </span>
               </div>
-              <div className="mt-8"><div className="mb-3 flex justify-between text-sm"><span className="font-medium">Avanzamento pratica</span><span className="text-slate-500">38%</span></div><Progress value={38} className="h-2 [&>div]:bg-[#0f756d]" /></div>
-              <div className="mt-8 grid gap-y-1 sm:grid-cols-2">
-                {statuses.map((status, index) => (
-                  <div key={status} className="flex items-center gap-3 py-3 text-sm">
-                    <span className={`grid size-6 place-items-center rounded-full ${index < 2 ? "bg-emerald-100 text-emerald-700" : index === 2 ? "bg-[#103d3a] text-white" : "bg-slate-100 text-slate-400"}`}>
-                      {index < 2 ? <Check className="size-3.5" /> : <Circle className="size-2 fill-current" />}
-                    </span>
-                    <span className={index <= 2 ? "font-medium" : "text-slate-400"}>{status}</span>
+              <p className="mt-4 text-xs text-slate-500">{note as string}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-7 grid gap-7 lg:grid-cols-[1.35fr_.65fr]">
+          <section className="rounded-[1.75rem] border bg-white p-7 sm:p-9">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Le mie analisi</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Verbali caricati e report generati compariranno qui.
+                </p>
+              </div>
+              <Badge variant="secondary">0 analisi</Badge>
+            </div>
+
+            <div className="mt-8 grid min-h-80 place-items-center rounded-2xl border border-dashed bg-[#f8faf9] px-6 py-12 text-center">
+              <div className="max-w-md">
+                <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-white text-[#0f756d] shadow-sm">
+                  <FolderOpen className="size-7" />
+                </span>
+                <h3 className="mt-6 text-xl font-semibold">
+                  Non hai ancora caricato nessuna multa.
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Carica il tuo primo verbale e ricevi uno screening
+                  preliminare.
+                </p>
+                <Button className="mt-6 h-11 rounded-full bg-[#103d3a] px-6" asChild>
+                  <Link href="/analizza">
+                    Carica una multa <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-6">
+            <section className="rounded-[1.75rem] border bg-white p-7">
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-xl bg-[#e8f2ef] text-[#0f756d]">
+                  <BarChart3 className="size-5" />
+                </span>
+                <h2 className="font-semibold">Stato pratica</h2>
+              </div>
+              <div className="mt-6 space-y-3">
+                {practiceStatuses.map((status) => (
+                  <div
+                    key={status}
+                    className="flex items-center justify-between rounded-xl bg-[#f7f9f8] px-4 py-3 text-sm"
+                  >
+                    <span>{status}</span>
+                    <span className="font-mono text-xs text-slate-400">0</span>
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-2xl border bg-white p-6">
-                <h3 className="font-semibold">Azioni richieste</h3>
-                <div className="mt-5 rounded-xl bg-amber-50 p-5">
-                  <PenLine className="size-5 text-amber-800" />
-                  <p className="mt-3 font-medium">Firma la procura</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">La firma è necessaria per procedere con la preparazione del ricorso.</p>
-                  <Button onClick={() => setSigned(true)} disabled={signed} className="mt-4 rounded-full bg-[#103d3a]">{signed ? "Procura firmata" : "Firma ora"} {signed && <Check className="size-4" />}</Button>
-                </div>
-              </div>
-              <div className="rounded-2xl border bg-white p-6">
-                <h3 className="font-semibold">Documenti recenti</h3>
-                <div className="mt-4 space-y-2">
-                  {["Report screening AI.pdf", "Verbale completo.pdf", "Ricevuta pagamento.pdf"].map((file) => <button key={file} className="flex w-full items-center gap-3 rounded-xl border p-4 text-left text-sm hover:bg-slate-50"><FileText className="size-4 text-[#0f756d]" /><span className="flex-1">{file}</span><Download className="size-4 text-slate-400" /></button>)}
-                </div>
-              </div>
-            </div>
-          </div>
+            </section>
+
+            <section className="rounded-[1.75rem] bg-[#e8f2ef] p-7">
+              <BriefcaseBusiness className="size-6 text-[#0f756d]" />
+              <h2 className="mt-5 text-lg font-semibold">
+                Richiedi approfondimento professionale
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                Dopo lo screening puoi sottoporre il verbale e il report a un
+                professionista per una valutazione del caso concreto.
+              </p>
+              <Button variant="outline" className="mt-6 rounded-full bg-white" asChild>
+                <Link href="/consulenza">Scopri il servizio</Link>
+              </Button>
+            </section>
+          </aside>
         </div>
       </div>
     </section>
   );
-}
-
-function Stat({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Scale }) {
-  return <div className="rounded-2xl border bg-white p-6"><div className="flex items-center justify-between"><div><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-semibold">{value}</p></div><span className="grid size-11 place-items-center rounded-xl bg-[#eaf3f0] text-[#0f756d]"><Icon className="size-5" /></span></div></div>;
 }

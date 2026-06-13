@@ -1,11 +1,41 @@
 export const SCREENING_DISCLAIMER =
   "Questa analisi è uno screening preliminare automatizzato e non costituisce parere legale, consulenza professionale o garanzia di accoglimento del ricorso.";
 
+export const NOT_DETECTED = "Non rilevato nel documento caricato";
+export const ARTICLE_NOT_IDENTIFIED =
+  "Articolo non identificato con sufficiente certezza";
+
 export type ScreeningOutcome =
-  | "Ricorso potenzialmente fondato"
-  | "Ricorso da approfondire"
-  | "Ricorso debole"
+  | "Elementi da approfondire"
+  | "Verifica consigliata"
+  | "Nessuna criticità evidente"
   | "Documentazione insufficiente";
+
+export type ViolationClassification =
+  | "ZTL / accesso area vietata"
+  | "Autovelox / eccesso velocità"
+  | "Divieto di sosta"
+  | "Semaforo rosso"
+  | "Mancata revisione"
+  | "Assicurazione"
+  | "Uso telefono"
+  | "Altro";
+
+export type IdentifiedFineData = {
+  authority: string;
+  municipality: string;
+  reportNumber: string;
+  plate: string;
+  violationDate: string;
+  violationTime: string;
+  notificationDate: string;
+  amount: string;
+  reducedAmount: string;
+  article: string;
+  paragraph: string;
+  violationType: ViolationClassification;
+  place: string;
+};
 
 export type ScreeningReport = {
   outcome: ScreeningOutcome;
@@ -15,6 +45,15 @@ export type ScreeningReport = {
   documentQuality: "Buona" | "Parziale" | "Insufficiente";
   analysisMethod: "OCR + regole" | "Testo PDF + regole";
   ollamaEnhanced: boolean;
+  identifiedData: IdentifiedFineData;
+  violatedRule: {
+    article: string;
+    paragraph: string;
+    classification: ViolationClassification;
+    description: string;
+  };
+  eventSummary: string;
+  preliminaryAssessment: string;
   extractedFacts: string[];
   reasons: {
     title: string;

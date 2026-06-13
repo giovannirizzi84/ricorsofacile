@@ -49,12 +49,14 @@ export async function enhanceReportWithOllama(
 function buildPrompt(extractedText: string, report: ScreeningReport) {
   return `
 Analizza il seguente testo estratto da un verbale di multa. Fornisci una
-valutazione preliminare, non un parere legale, indicando possibili vizi formali,
-termini da verificare, rischi del ricorso e documenti mancanti.
+valutazione preliminare, non un parere legale, indicando esclusivamente
+elementi da approfondire, possibili criticità, verifiche consigliate, termini
+da verificare e documenti mancanti.
 
-Non cambiare il punteggio deterministico (${report.score}/100), non inventare
-norme o fatti e non promettere l'accoglimento. Scrivi un solo paragrafo chiaro
-in italiano, massimo 180 parole.
+Non inventare norme, articoli, date o fatti. Non usare espressioni come
+"ricorso fondato", "multa annullabile", "probabilità di successo" o promesse
+di accoglimento. Scrivi un solo paragrafo prudente in italiano, massimo 180
+parole.
 
 Motivi rilevati dalle regole:
 ${report.reasons.map((reason) => `- ${reason.title}: ${reason.evidence}`).join("\n")}

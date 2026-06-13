@@ -70,11 +70,15 @@ Il motore considera, tra gli altri:
 - motivazione della mancata contestazione immediata;
 - qualità e completezza della documentazione.
 
-Lo score è indicativo:
+Il motore usa internamente un indicatore tecnico per ordinare le segnalazioni,
+ma il report mostra esclusivamente esiti prudenti:
 
-- `0-39`: ricorso debole;
-- `40-69`: ricorso da approfondire;
-- `70-100`: ricorso potenzialmente fondato.
+- `Nessuna criticità evidente`;
+- `Verifica consigliata`;
+- `Elementi da approfondire`;
+- `Documentazione insufficiente`.
+
+L’indicatore non rappresenta una probabilità di successo del ricorso.
 
 Una confidenza documentale molto bassa forza l’esito
 `Documentazione insufficiente`.
