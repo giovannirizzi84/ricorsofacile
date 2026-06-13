@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   ArrowRight,
   CalendarClock,
-  Check,
   CircleCheck,
   CircleDollarSign,
   FileCheck2,
@@ -23,7 +22,12 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { packages } from "@/lib/content";
+import { PackageGuide } from "@/components/package-guide";
+import {
+  ServicePackages,
+} from "@/components/service-packages";
+import { ExternalCostsNotice } from "@/components/external-costs-notice";
+import { faqs } from "@/lib/content";
 
 const steps = [
   {
@@ -51,27 +55,6 @@ const reportItems = [
   "Termine per il ricorso",
   "Valutazione preliminare",
   "Report PDF scaricabile",
-];
-
-const faqs = [
-  {
-    question: "Lo screening garantisce l’annullamento della multa?",
-    answer:
-      "No. Lo screening individua esclusivamente elementi che potrebbero meritare approfondimento.",
-  },
-  {
-    question: "Lo screening sostituisce il parere di un avvocato?",
-    answer: "No. Lo screening è uno strumento informativo preliminare.",
-  },
-  {
-    question: "Quanto tempo richiede?",
-    answer: "Circa 60 secondi.",
-  },
-  {
-    question: "Posso richiedere assistenza professionale successivamente?",
-    answer:
-      "Sì. Dopo lo screening potrai valutare se richiedere una consulenza o un ricorso professionale.",
-  },
 ];
 
 export default function Home() {
@@ -440,86 +423,9 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-3">
-            {packages.map((item) => (
-              <article
-                key={item.name}
-                className={`relative flex flex-col rounded-[2rem] border p-7 sm:p-8 ${
-                  item.featured
-                    ? "border-[#0f756d] bg-[#103d3a] text-white shadow-[0_24px_70px_rgba(13,52,49,.18)] lg:-translate-y-3"
-                    : "bg-white"
-                }`}
-              >
-                {item.featured && (
-                  <span className="absolute right-6 top-6 rounded-full bg-lime-300 px-3 py-1 text-xs font-bold text-[#153a35]">
-                    {item.badge}
-                  </span>
-                )}
-                <p
-                  className={`text-sm font-bold uppercase tracking-[0.15em] ${
-                    item.featured ? "text-lime-300" : "text-[#0f756d]"
-                  }`}
-                >
-                  {item.name}
-                </p>
-                <div className="mt-7 flex items-end gap-2">
-                  {"previousPrice" in item && item.previousPrice && (
-                    <span
-                      className={`pb-1 text-lg line-through ${
-                        item.featured ? "text-white/45" : "text-slate-400"
-                      }`}
-                    >
-                      {item.previousPrice}
-                    </span>
-                  )}
-                  <span className="text-5xl font-semibold tracking-[-0.05em]">
-                    {item.price}
-                  </span>
-                </div>
-                <p
-                  className={`mt-5 min-h-16 text-sm leading-6 ${
-                    item.featured ? "text-white/68" : "text-slate-600"
-                  }`}
-                >
-                  {item.description}
-                </p>
-                <div
-                  className={`my-6 h-px ${
-                    item.featured ? "bg-white/12" : "bg-slate-200"
-                  }`}
-                />
-                <ul className="flex-1 space-y-4 text-sm">
-                  {item.features.map((feature) => (
-                    <li key={feature} className="flex gap-3">
-                      <span
-                        className={`grid size-6 shrink-0 place-items-center rounded-full ${
-                          item.featured
-                            ? "bg-lime-300/15 text-lime-300"
-                            : "bg-[#e3efeb] text-[#0f756d]"
-                        }`}
-                      >
-                        <Check className="size-4" />
-                      </span>
-                      <span className={item.featured ? "text-white/85" : ""}>
-                        {feature}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  size="lg"
-                  variant={item.featured ? "default" : "outline"}
-                  className={`mt-8 h-12 w-full rounded-full ${
-                    item.featured
-                      ? "bg-lime-300 font-semibold text-[#153a35] hover:bg-lime-200"
-                      : ""
-                  }`}
-                  asChild
-                >
-                  <Link href={item.href}>{item.cta}</Link>
-                </Button>
-              </article>
-            ))}
+          <div className="mt-12">
+            <ServicePackages />
+            <ExternalCostsNotice />
           </div>
         </div>
       </section>
@@ -543,12 +449,12 @@ export default function Home() {
             className="overflow-hidden rounded-2xl border px-6 sm:px-8"
           >
             {faqs.map((faq, index) => (
-              <AccordionItem key={faq.question} value={`faq-${index}`}>
+              <AccordionItem key={faq.q} value={`faq-${index}`}>
                 <AccordionTrigger className="py-6 text-base font-semibold hover:no-underline">
-                  {faq.question}
+                  {faq.q}
                 </AccordionTrigger>
                 <AccordionContent className="pb-6 pr-8 text-base leading-7 text-slate-600">
-                  {faq.answer}
+                  {faq.a}
                 </AccordionContent>
               </AccordionItem>
             ))}
@@ -558,30 +464,7 @@ export default function Home() {
 
       <section className="pb-20 sm:pb-24">
         <div className="page-shell">
-          <div className="relative overflow-hidden rounded-[2rem] bg-[#103d3a] px-6 py-14 text-center text-white sm:px-12 lg:py-20">
-            <div className="soft-grid absolute inset-0 opacity-35" />
-            <div className="relative">
-              <FileSearch className="mx-auto size-8 text-lime-300" />
-              <h2 className="mx-auto mt-6 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
-                Non sai quale soluzione scegliere?
-              </h2>
-              <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/70">
-                Inizia dallo Screening AI a €0,99. Riceverai una valutazione
-                preliminare e potrai decidere successivamente se approfondire
-                con un professionista.
-              </p>
-              <Button
-                size="lg"
-                className="mt-8 h-14 rounded-full bg-lime-300 px-7 text-base font-semibold text-[#153a35] hover:bg-lime-200"
-                asChild
-              >
-                <Link href="/analizza">
-                  Analizza la tua multa
-                  <ArrowRight className="ml-1 size-4" />
-                </Link>
-              </Button>
-            </div>
-          </div>
+          <PackageGuide />
         </div>
       </section>
 

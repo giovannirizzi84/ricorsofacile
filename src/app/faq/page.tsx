@@ -5,7 +5,7 @@ import { faqs } from "@/lib/content";
 export default function FaqPage() {
   return (
     <>
-      <PageHero eyebrow="Domande frequenti" title="Risposte chiare prima di iniziare" description="Tempi, costi, documenti e limiti dello screening spiegati senza tecnicismi inutili." />
+      <PageHero eyebrow="Domande frequenti" title="Risposte chiare prima di iniziare" description="Screening automatico, assistenza del team legale, scelta del percorso e costi spiegati senza tecnicismi inutili." />
       <section className="section-space bg-white">
         <div className="page-shell max-w-4xl">
           <Accordion type="single" collapsible className="space-y-3">

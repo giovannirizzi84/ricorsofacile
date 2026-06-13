@@ -1,90 +1,128 @@
-export const packages = [
+export type ServicePackage = {
+  name: string;
+  price: string;
+  audience?: string;
+  description: string;
+  features: string[];
+  cta: string;
+  href: string;
+  badge?: string;
+  primaryEntry?: boolean;
+  featured?: boolean;
+  exclusion?: string;
+  idealFor?: string[];
+};
+
+export const packages: ServicePackage[] = [
   {
     name: "Screening AI",
     price: "€0,99",
-    note: "una tantum",
-    description: "Per capire rapidamente se esistono elementi da approfondire.",
+    description:
+      "Per capire rapidamente se la tua multa presenta elementi da approfondire.",
     features: [
-      "Analisi preliminare del verbale",
+      "Analisi preliminare automatizzata",
+      "Sintesi del verbale",
       "Possibili criticità rilevate",
-      "Termini di ricorso",
-      "Valutazione preliminare",
-      "Report PDF",
+      "Termini per il ricorso",
+      "Report sintetico PDF",
     ],
     cta: "Analizza la tua multa",
     href: "/analizza",
+    badge: "Inizia da qui",
+    primaryEntry: true,
+  },
+  {
+    name: "Consulenza Legale",
+    price: "€19,90",
+    audience: "Per sanzioni fino a €250",
+    description:
+      "Per chi ha ricevuto una sanzione di importo contenuto e vuole una verifica professionale prima di decidere se procedere.",
+    features: [
+      "Revisione del verbale da parte del team legale",
+      "Verifica dell’analisi AI",
+      "Valutazione della convenienza economica",
+      "Indicazione del percorso più opportuno",
+      "Risposta sintetica professionale",
+    ],
+    exclusion: "Non include la redazione del ricorso.",
+    cta: "Richiedi consulenza legale",
+    href: "/consulenza",
   },
   {
     name: "Ricorso Smart",
     price: "€79",
-    previousPrice: "€99",
-    note: "",
-    description: "Per ricevere un ricorso al Prefetto revisionato da un professionista.",
+    audience: "Per sanzioni da €250 a €500",
+    description:
+      "Per sanzioni di importo medio e casi standard in cui il team legale ritenga opportuno procedere con un ricorso.",
     features: [
-      "Revisione professionale del verbale",
-      "Ricorso personalizzato al Prefetto",
+      "Analisi professionale del verbale",
+      "Valutazione della strategia più opportuna",
+      "Scelta tra Prefetto e Giudice di Pace caso per caso",
+      "Predisposizione del ricorso",
       "Modello pronto alla firma",
-      "Istruzioni di deposito",
+      "Istruzioni operative di deposito o invio",
       "Assistenza via email",
     ],
     cta: "Richiedi Ricorso Smart",
     href: "/consulenza",
     featured: true,
-    badge: "Più scelto",
+    badge: "Consigliato",
   },
   {
-    name: "Ricorso Completo",
+    name: "Ricorso Premium",
     price: "€149",
-    note: "",
-    description: "Per un supporto professionale più completo durante la procedura.",
+    audience: "Per sanzioni superiori a €500 o casi complessi",
+    description:
+      "Per pratiche più delicate, sanzioni elevate o casi con conseguenze ulteriori.",
+    idealFor: [
+      "Sanzioni superiori a €500",
+      "Sospensione patente",
+      "Decurtazione punti significativa",
+      "Recidiva",
+      "Documentazione articolata",
+      "Contestazioni più complesse",
+    ],
     features: [
       "Analisi professionale approfondita",
-      "Valutazione strategica",
-      "Ricorso personalizzato",
-      "Assistenza procedurale",
-      "Supporto documentale",
-      "Monitoraggio pratica",
+      "Valutazione strategica del caso",
+      "Gestione documentale avanzata",
+      "Predisposizione del ricorso",
+      "Supporto procedurale dedicato",
+      "Monitoraggio della pratica",
+      "Aggiornamenti sullo stato della pratica",
     ],
-    cta: "Richiedi assistenza completa",
+    cta: "Richiedi Ricorso Premium",
     href: "/consulenza",
   },
 ];
 
 export const faqs = [
   {
-    q: "L’analisi AI è un parere legale?",
-    a: "No. È una valutazione preliminare automatizzata basata sui dati e sui documenti caricati. Non sostituisce la consulenza di un professionista e non garantisce l’accoglimento del ricorso.",
+    q: "Lo Screening AI garantisce l’annullamento della multa?",
+    a: "No. Lo Screening AI individua esclusivamente elementi che potrebbero meritare approfondimento. Non garantisce l’annullamento della sanzione.",
   },
   {
-    q: "Quanto costa fare ricorso?",
-    a: "Il ricorso al Prefetto non prevede contributo unificato, salvo eventuali costi di invio. Per il Giudice di Pace sono previsti costi vivi secondo il valore della causa. Il compenso del servizio è sempre indicato separatamente.",
+    q: "Lo Screening AI sostituisce il parere di un avvocato?",
+    a: "No. Lo Screening AI è uno strumento informativo preliminare. Le richieste di consulenza o ricorso vengono valutate dal nostro team legale.",
   },
   {
-    q: "Meglio Prefetto o Giudice di Pace?",
-    a: "Dipende dal motivo di ricorso, dai tempi, dal valore della sanzione e dal rischio economico. Il report indica il percorso potenzialmente più coerente, ma la scelta definitiva richiede una valutazione del caso concreto.",
+    q: "Chi esamina la mia pratica se richiedo consulenza o ricorso?",
+    a: "La pratica viene esaminata dal nostro team legale, che valuta la documentazione e individua il percorso più opportuno.",
   },
   {
-    q: "Cosa succede se il ricorso al Prefetto viene rigettato?",
-    a: "In caso di rigetto, l’ordinanza può prevedere il pagamento di una somma superiore rispetto alla sanzione originaria. Questo rischio viene evidenziato prima di procedere.",
+    q: "Devo scegliere io tra ricorso al Prefetto e ricorso al Giudice di Pace?",
+    a: "No. Se richiedi assistenza professionale, il team legale valuterà caso per caso quale percorso sia più appropriato tra Prefetto e Giudice di Pace.",
   },
   {
-    q: "Posso caricare foto del verbale?",
-    a: "Sì. Puoi caricare PDF, JPG e PNG. È importante che ogni pagina sia leggibile, completa e fotografata senza riflessi.",
+    q: "Qual è la differenza tra Prefetto e Giudice di Pace?",
+    a: "Sono due diversi strumenti previsti dalla legge per contestare una sanzione. La scelta dipende da vari elementi, tra cui tipo di violazione, importo, documentazione disponibile, termini e obiettivi del caso concreto.",
   },
   {
-    q: "Serve un avvocato?",
-    a: "Non sempre. In molte procedure il cittadino può agire personalmente, ma l’assistenza professionale può essere opportuna nei casi più complessi.",
+    q: "Il prezzo include tutti i costi del ricorso?",
+    a: "No. I prezzi indicati riguardano esclusivamente i servizi offerti da MulteOnline. Eventuali contributi, marche, diritti, spese di notifica, contributo unificato o altri costi esterni restano a carico del cliente.",
   },
   {
-    q: "Posso seguire tutto online?",
-    a: "Sì. Dall’area riservata puoi caricare documenti, controllare lo stato, firmare la procura e scaricare report e atti predisposti.",
-  },
-  {
-    q: "Quanto tempo ho per fare ricorso?",
-    a: "In generale, 60 giorni per il Prefetto e 30 giorni per il Giudice di Pace dalla contestazione o notifica, salvo eccezioni. Il report calcola una scadenza indicativa partendo dai dati inseriti.",
-  },
-  {
-    q: "Cosa comprende il pacchetto completo?",
-    a: "Analisi professionale, redazione del ricorso, gestione documentale, firma della procura, assistenza procedurale e monitoraggio della pratica.",
+    q: "Quale pacchetto devo scegliere?",
+    a: "In generale, per sanzioni fino a €250 può essere sufficiente una Consulenza Legale. Per sanzioni tra €250 e €500 può essere indicato il Ricorso Smart. Per sanzioni superiori a €500 o casi complessi può essere più adatto il Ricorso Premium. In ogni caso, puoi iniziare dallo Screening AI a €0,99.",
   },
 ];

@@ -32,10 +32,14 @@ const steps = [
     title: "Estrazione dati",
     text: "Il sistema legge il documento e prova a trasformare le informazioni presenti in dati strutturati, senza completare automaticamente ciò che non è leggibile.",
     items: [
-      "Comune o ente accertatore",
-      "Data della violazione e della notifica",
-      "Importo e articolo del Codice della Strada",
-      "Tipologia: ZTL, velocità, sosta e altri casi",
+      "Ente accertatore e Comune",
+      "Numero verbale e targa, se presente",
+      "Data e ora della violazione",
+      "Data di notifica",
+      "Importo della sanzione",
+      "Articolo CdS e comma, se presente",
+      "Luogo della violazione",
+      "Descrizione dell’accaduto",
     ],
   },
   {
@@ -48,6 +52,7 @@ const steps = [
       "Possibili criticità formali",
       "Coerenza dei dati identificati",
       "Convenienza economica dell’approfondimento",
+      "Opportunità di coinvolgere il team legale",
     ],
   },
   {
@@ -56,7 +61,9 @@ const steps = [
     title: "Report finale",
     text: "Ricevi una sintesi ordinata e prudenziale, utile per capire se raccogliere altri documenti o richiedere un approfondimento professionale.",
     items: [
-      "Dati estratti e norma individuata",
+      "Dati estratti",
+      "Norma individuata",
+      "Descrizione sintetica dell’accaduto",
       "Possibili profili da approfondire",
       "Termini per Prefetto e Giudice di Pace",
       "Raccomandazione prudenziale",
@@ -106,7 +113,7 @@ export default function HowItWorksPage() {
             description="Il percorso è progettato per rendere trasparente cosa viene letto, cosa viene controllato e quali limiti conserva lo screening."
           />
           <div className="mt-14 space-y-5">
-            {steps.map((step, index) => {
+            {steps.map((step) => {
               const Icon = step.icon;
               return (
                 <article
@@ -139,9 +146,6 @@ export default function HowItWorksPage() {
                       </li>
                     ))}
                   </ul>
-                  {index < steps.length - 1 && (
-                    <div className="absolute" aria-hidden="true" />
-                  )}
                 </article>
               );
             })}
@@ -172,6 +176,36 @@ export default function HowItWorksPage() {
       </section>
 
       <section className="section-space bg-white">
+        <div className="page-shell">
+          <SectionHeading
+            eyebrow="Due livelli distinti"
+            title="Automazione per iniziare, team legale quando serve"
+            description="MulteOnline mantiene chiaro chi svolge ogni attività e in quale momento del percorso."
+            align="center"
+          />
+          <div className="mx-auto mt-12 grid max-w-5xl gap-5 md:grid-cols-2">
+            <article className="rounded-[1.75rem] border bg-[#f7faf9] p-7 sm:p-9">
+              <ScanSearch className="size-7 text-[#0f756d]" />
+              <h3 className="mt-5 text-2xl font-semibold">Screening AI</h3>
+              <p className="mt-3 text-sm leading-7 text-slate-600">
+                Estrae i dati leggibili e produce un’analisi preliminare
+                automatizzata con possibili elementi da approfondire.
+              </p>
+            </article>
+            <article className="rounded-[1.75rem] bg-[#103d3a] p-7 text-white sm:p-9">
+              <Gavel className="size-7 text-lime-300" />
+              <h3 className="mt-5 text-2xl font-semibold">Team legale</h3>
+              <p className="mt-3 text-sm leading-7 text-white/70">
+                Esamina le richieste di consulenza o ricorso e valuta caso per
+                caso il percorso più appropriato tra Prefetto e Giudice di
+                Pace.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-space bg-[#f7faf9]">
         <div className="page-shell grid gap-10 lg:grid-cols-[.8fr_1.2fr] lg:items-center">
           <div>
             <span className="grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-700">

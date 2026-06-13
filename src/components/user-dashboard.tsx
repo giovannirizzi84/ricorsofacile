@@ -17,6 +17,7 @@ const practiceStatuses = [
   "Analizzato",
   "Da approfondire",
   "Consulenza richiesta",
+  "Ricorso richiesto",
   "Chiuso",
 ];
 
@@ -130,8 +131,9 @@ export function UserDashboard() {
                 Richiedi approfondimento professionale
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Dopo lo screening puoi sottoporre il verbale e il report a un
-                professionista per una valutazione del caso concreto.
+                Dopo lo screening puoi sottoporre verbale e report al team
+                legale. Il percorso tra Prefetto e Giudice di Pace viene
+                valutato caso per caso.
               </p>
               <Button variant="outline" className="mt-6 rounded-full bg-white" asChild>
                 <Link href="/consulenza">Scopri il servizio</Link>
