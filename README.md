@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MulteOnline
 
-## Getting Started
+Web app Next.js per lo screening preliminare automatizzato di verbali stradali.
+Il sistema funziona gratuitamente senza OpenAI e senza credito API.
 
-First, run the development server:
+## Pipeline di analisi
+
+1. L’utente carica PDF, JPG o PNG.
+2. I PDF vengono letti prima come testo nativo.
+3. I PDF scannerizzati vengono convertiti in immagini e passati a Tesseract.js.
+4. Le immagini vengono analizzate con OCR italiano locale.
+5. Il motore TypeScript applica regole preliminari e calcola score/confidenza.
+6. Se Ollama è disponibile, `qwen3:8b` migliora soltanto la sintesi narrativa.
+7. Se Ollama non risponde, il report viene comunque generato dalle regole.
+
+Il report include fatti estratti, motivi rilevati, criticità, dati mancanti,
+termini indicativi, percorso da approfondire e costi vivi orientativi.
+
+## Avvio
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apri [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Non sono necessarie chiavi API.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Ollama opzionale
 
-## Learn More
+Ollama non è obbligatorio. Per abilitarlo su macOS:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+brew install ollama
+ollama pull qwen3:8b
+ollama serve
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Configurazione facoltativa in `.env.local`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```env
+OLLAMA_ENABLED=true
+OLLAMA_URL=http://localhost:11434/api/generate
+OLLAMA_MODEL=qwen3:8b
+```
 
-## Deploy on Vercel
+Per usare esclusivamente OCR e regole:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```env
+OLLAMA_ENABLED=false
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Moduli principali
+
+- `src/lib/documents/extractText.ts`: testo PDF e OCR Tesseract.
+- `src/lib/rules/fineAnalysisRules.ts`: estrazione dati, regole e scoring.
+- `src/lib/ai/ollamaClient.ts`: arricchimento narrativo locale opzionale.
+- `src/app/api/analyze/route.ts`: validazione upload e orchestrazione.
+
+## Regole MVP
+
+Il motore considera, tra gli altri:
+
+- possibile notifica oltre 90 giorni;
+- riferimenti ad autovelox, tutor e ZTL;
+- omologazione o approvazione del dispositivo;
+- luogo, targa, ente, articolo e importo;
+- modalità e autorità per il ricorso;
+- motivazione della mancata contestazione immediata;
+- qualità e completezza della documentazione.
+
+Lo score è indicativo:
+
+- `0-39`: ricorso debole;
+- `40-69`: ricorso da approfondire;
+- `70-100`: ricorso potenzialmente fondato.
+
+Una confidenza documentale molto bassa forza l’esito
+`Documentazione insufficiente`.
+
+## Limiti
+
+- massimo 5 documenti;
+- massimo 10 MB per file e 30 MB complessivi;
+- OCR dei PDF scannerizzati limitato alle prime 5 pagine;
+- nessuna archiviazione persistente;
+- nessuna banca dati giurisprudenziale aggiornata;
+- le regole non sostituiscono la valutazione del caso concreto.
+
+> Questa analisi è uno screening preliminare automatizzato e non costituisce
+> parere legale, consulenza professionale o garanzia di accoglimento del
+> ricorso.
