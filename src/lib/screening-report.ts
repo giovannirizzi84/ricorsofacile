@@ -73,18 +73,20 @@ export type ScreeningReport = {
   summary: string;
   documentQuality: "Buona" | "Parziale" | "Insufficiente";
   analysisMethod: "OCR + regole" | "Testo PDF + regole";
-  ollamaEnhanced: boolean;
+  aiEnhanced: boolean;
+  rulesEngineUsed: boolean;
   aiExecution: {
-    provider: "Ollama locale";
+    provider: "Google Gemini";
     model: string;
     attempted: boolean;
     promptExecuted: boolean;
     fallbackUsed: boolean;
     status:
       | "Non tentato"
-      | "Disattivato"
-      | "Eseguito"
-      | "Servizio non raggiungibile"
+      | "Completata"
+      | "Chiave non configurata"
+      | "Quota temporaneamente esaurita"
+      | "Provider non disponibile"
       | "Risposta non valida";
   };
   identifiedData: IdentifiedFineData;

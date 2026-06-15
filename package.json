@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:screening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types scripts/screening-analysis.test.mts"
+    "test:screening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types scripts/*.test.mts"
   },
   "dependencies": {
     "@tesseract.js-data/ita": "^1.0.0",

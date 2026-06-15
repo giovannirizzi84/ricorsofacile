@@ -298,7 +298,7 @@ export function ScreeningFlow() {
                     <StepTitle
                       icon={FileSearch}
                       title="Avvia l’analisi automatizzata"
-                      text="Il documento viene elaborato tramite OCR e regole preliminari; Ollama viene usato solo se disponibile."
+                      text="Il documento viene elaborato tramite OCR, motore di regole e Gemini, quando disponibile."
                     />
                     <div className="mt-8 rounded-2xl border bg-[#f5f8f7] p-5">
                       <div className="flex items-start gap-4">
@@ -311,8 +311,10 @@ export function ScreeningFlow() {
                             Il sistema leggerà {files.length} document
                             {files.length === 1 ? "o" : "i"}, estrarrà i fatti e
                             applicherà regole preliminari. I file non vengono
-                            salvati da questa applicazione e OpenAI non è
-                            necessario.
+                            salvati da questa applicazione; quando Gemini è
+                            disponibile, il testo estratto viene inviato a
+                            Google per completare l’analisi. In caso contrario
+                            il report viene prodotto dal motore di regole.
                           </p>
                         </div>
                       </div>
@@ -321,7 +323,7 @@ export function ScreeningFlow() {
                       <Consent
                         checked={privacyAccepted}
                         onCheckedChange={setPrivacyAccepted}
-                        text="Acconsento all’elaborazione temporanea dei documenti per effettuare OCR e screening preliminare."
+                        text="Acconsento all’elaborazione temporanea dei documenti e all’invio del testo estratto a Google Gemini, quando disponibile, per effettuare lo screening preliminare."
                       />
                       <Consent
                         checked={disclaimerAccepted}
@@ -502,7 +504,7 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
         </div>
         <div className="flex justify-between pt-3 font-semibold">
           <span>Modalità</span>
-          <span>OCR + regole</span>
+          <span>OCR + regole + AI</span>
         </div>
       </div>
     </aside>
@@ -565,11 +567,11 @@ function Report({ report }: { report: ScreeningReport }) {
             icon={ClipboardList}
           >
             <ExtractedDataGrid items={report.extractedData} />
-            <div className="grid gap-3 pt-2 sm:grid-cols-3">
+            <div className="grid gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
               <InfoBox
                 label="Metodo"
                 value={report.analysisMethod}
-                note="Elaborazione automatizzata senza OpenAI"
+                note="OCR e regole, con Gemini quando disponibile"
               />
               <InfoBox
                 label="Qualità estrazione"
@@ -577,17 +579,22 @@ function Report({ report }: { report: ScreeningReport }) {
                 note="Misura tecnica, non probabilità di esito"
               />
               <InfoBox
-                label="Prompt AI narrativo"
+                label="Analisi AI"
                 value={
                   report.aiExecution.promptExecuted
-                    ? "Eseguito"
-                    : "Non eseguito"
+                    ? "Completata"
+                    : "Non disponibile"
                 }
                 note={
                   report.aiExecution.promptExecuted
                     ? `${report.aiExecution.provider} · ${report.aiExecution.model}`
-                    : `${report.aiExecution.status}. Report prodotto dal motore di regole.`
+                    : "Il report è stato prodotto senza interrompere l’analisi."
                 }
+              />
+              <InfoBox
+                label="Motore regole"
+                value={report.rulesEngineUsed ? "Usato: sì" : "Usato: no"}
+                note="Controlli deterministici applicati al testo estratto"
               />
             </div>
           </ReportSection>

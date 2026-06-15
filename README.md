@@ -1,7 +1,8 @@
 # MulteOnline
 
 Web app Next.js per lo screening preliminare automatizzato di verbali stradali.
-Il sistema funziona gratuitamente senza OpenAI e senza credito API.
+Il sistema usa Gemini come provider AI principale e continua a funzionare con
+OCR e regole anche senza una chiave API.
 
 ## Pipeline di analisi
 
@@ -10,8 +11,8 @@ Il sistema funziona gratuitamente senza OpenAI e senza credito API.
 3. I PDF scannerizzati vengono convertiti in immagini e passati a Tesseract.js.
 4. Le immagini vengono analizzate con OCR italiano locale.
 5. Il motore TypeScript applica regole preliminari e calcola score/confidenza.
-6. Se Ollama è disponibile, `qwen3:8b` migliora soltanto la sintesi narrativa.
-7. Se Ollama non risponde, il report viene comunque generato dalle regole.
+6. Gemini riceve testo estratto, dati delle regole e uno schema JSON vincolante.
+7. Se Gemini non risponde, il report viene comunque generato dalle regole.
 
 Il report include fatti estratti, motivi rilevati, criticità, dati mancanti,
 termini indicativi, percorso da approfondire e costi vivi orientativi.
@@ -25,37 +26,46 @@ npm run dev
 
 Apri [http://localhost:3000](http://localhost:3000).
 
-Non sono necessarie chiavi API.
+Senza chiave Gemini il sito usa automaticamente OCR e motore di regole.
 
-## Ollama opzionale
+## Gemini
 
-Ollama non è obbligatorio. Per abilitarlo su macOS:
-
-```bash
-brew install ollama
-ollama pull qwen3:8b
-ollama serve
-```
-
-Configurazione facoltativa in `.env.local`:
+1. Apri [Google AI Studio](https://aistudio.google.com/apikey).
+2. Accedi con un account Google e crea o seleziona un progetto.
+3. Fai clic su **Create API key** e copia la chiave.
+4. Crea `.env.local` nella root del progetto:
 
 ```env
-OLLAMA_ENABLED=true
-OLLAMA_URL=http://localhost:11434/api/generate
-OLLAMA_MODEL=qwen3:8b
+GEMINI_API_KEY=la_tua_chiave
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
-Per usare esclusivamente OCR e regole:
+`gemini-2.5-flash-lite` è il modello stabile predefinito per contenere costi e
+latenza. La disponibilità e i limiti del free tier dipendono dalle condizioni
+Google vigenti.
 
-```env
-OLLAMA_ENABLED=false
-```
+La chiave resta esclusivamente sul server e non viene inviata al browser.
+Quando Gemini è attivo, il testo estratto dal verbale viene trasmesso alle API
+Google. Prima dell’uso commerciale devono essere completate informativa,
+accordi e valutazioni privacy applicabili.
+
+## Configurazione Vercel
+
+1. Apri il progetto MulteOnline nella dashboard Vercel.
+2. Vai in **Settings → Environment Variables**.
+3. Aggiungi `GEMINI_API_KEY` come variabile sensibile per Production, Preview e
+   Development.
+4. Aggiungi `GEMINI_MODEL` con valore `gemini-2.5-flash-lite`.
+5. Esegui un nuovo deployment affinché le variabili siano disponibili.
+
+Non configurare variabili `NEXT_PUBLIC_` per la chiave: la esporrebbero al
+browser.
 
 ## Moduli principali
 
 - `src/lib/documents/extractText.ts`: testo PDF e OCR Tesseract.
 - `src/lib/rules/fineAnalysisRules.ts`: estrazione dati, regole e scoring.
-- `src/lib/ai/ollamaClient.ts`: arricchimento narrativo locale opzionale.
+- `src/lib/ai/geminiClient.ts`: analisi Gemini strutturata e fallback.
 - `src/app/api/analyze/route.ts`: validazione upload e orchestrazione.
 
 ## Regole MVP

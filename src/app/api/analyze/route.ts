@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enhanceReportWithOllama } from "@/lib/ai/ollamaClient";
+import { enhanceReportWithGemini } from "@/lib/ai/geminiClient";
 import { extractDocuments } from "@/lib/documents/extractText";
 import {
   analyzeFineText,
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       method: usedOcr ? "OCR + regole" : "Testo PDF + regole",
       warnings,
     });
-    const report = await enhanceReportWithOllama(extractedText, ruleReport);
+    const report = await enhanceReportWithGemini(extractedText, ruleReport);
     logExtractionResult(report);
 
     return NextResponse.json({
@@ -63,7 +63,8 @@ export async function POST(request: Request) {
           characters: document.text.length,
           warnings: document.warnings,
         })),
-        ollamaEnhanced: report.ollamaEnhanced,
+        aiEnhanced: report.aiEnhanced,
+        rulesEngineUsed: report.rulesEngineUsed,
         aiExecution: report.aiExecution,
       },
     });
