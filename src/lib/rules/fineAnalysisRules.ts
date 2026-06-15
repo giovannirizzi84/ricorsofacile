@@ -120,7 +120,7 @@ export function analyzeFineText(
     rulesEngineUsed: true,
     aiExecution: {
       provider: "Google Gemini",
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       attempted: false,
       promptExecuted: false,
       fallbackUsed: true,

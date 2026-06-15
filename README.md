@@ -37,12 +37,11 @@ Senza chiave Gemini il sito usa automaticamente OCR e motore di regole.
 
 ```env
 GEMINI_API_KEY=la_tua_chiave
-GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-`gemini-2.5-flash-lite` è il modello stabile predefinito per contenere costi e
-latenza. La disponibilità e i limiti del free tier dipendono dalle condizioni
-Google vigenti.
+`gemini-2.5-flash` è il modello stabile predefinito e disponibile nel free
+tier. La disponibilità e i limiti dipendono dalle condizioni Google vigenti.
 
 La chiave resta esclusivamente sul server e non viene inviata al browser.
 Quando Gemini è attivo, il testo estratto dal verbale viene trasmesso alle API
@@ -55,7 +54,7 @@ accordi e valutazioni privacy applicabili.
 2. Vai in **Settings → Environment Variables**.
 3. Aggiungi `GEMINI_API_KEY` come variabile sensibile per Production, Preview e
    Development.
-4. Aggiungi `GEMINI_MODEL` con valore `gemini-2.5-flash-lite`.
+4. Aggiungi `GEMINI_MODEL` con valore `gemini-2.5-flash`.
 5. Esegui un nuovo deployment affinché le variabili siano disponibili.
 
 Non configurare variabili `NEXT_PUBLIC_` per la chiave: la esporrebbero al

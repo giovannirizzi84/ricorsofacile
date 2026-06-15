@@ -9,7 +9,7 @@ import {
   type ViolationClassification,
 } from "../screening-report.ts";
 
-const defaultModel = "gemini-2.5-flash-lite";
+const defaultModel = "gemini-2.5-flash";
 const defaultEndpoint =
   "https://generativelanguage.googleapis.com/v1beta/models";
 const missingValues = new Set([
@@ -104,17 +104,18 @@ export async function enhanceReportWithGemini(
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 4_096,
-          responseFormat: {
-            text: {
-              mimeType: "application/json",
-              schema: screeningResponseSchema,
-            },
-          },
+          responseMimeType: "application/json",
+          responseSchema: screeningResponseSchema,
         },
       }),
     });
 
     if (!response.ok) {
+      const errorBody = await response.text();
+      console.warn("Gemini screening request failed", {
+        status: response.status,
+        message: errorBody.slice(0, 800),
+      });
       return withUnavailableStatus(
         report,
         model,
