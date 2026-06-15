@@ -53,6 +53,8 @@ test("classifica un verbale ZTL senza inventare dati mancanti", () => {
     "ZTL / accesso area vietata",
   );
   assert.equal(report.extractedData.length, 15);
+  assert.equal(report.aiExecution.promptExecuted, false);
+  assert.equal(report.aiExecution.fallbackUsed, true);
   assert.equal(
     report.appealDeadlines.prefetto,
     "Generalmente 60 giorni dalla contestazione o notificazione",

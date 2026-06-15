@@ -7,7 +7,14 @@ export async function enhanceReportWithOllama(
   extractedText: string,
   report: ScreeningReport,
 ): Promise<ScreeningReport> {
-  if (process.env.OLLAMA_ENABLED === "false") return report;
+  const model = process.env.OLLAMA_MODEL || defaultModel;
+  if (process.env.OLLAMA_ENABLED === "false") {
+    return withExecutionStatus(report, {
+      model,
+      attempted: false,
+      status: "Disattivato",
+    });
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -20,7 +27,7 @@ export async function enhanceReportWithOllama(
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          model: process.env.OLLAMA_MODEL || defaultModel,
+          model,
           stream: false,
           options: { temperature: 0.2 },
           prompt: buildPrompt(extractedText, report),
@@ -28,11 +35,23 @@ export async function enhanceReportWithOllama(
       },
     );
 
-    if (!response.ok) return report;
+    if (!response.ok) {
+      return withExecutionStatus(report, {
+        model,
+        attempted: true,
+        status: "Servizio non raggiungibile",
+      });
+    }
 
     const payload = (await response.json()) as { response?: string };
     const narrative = parseNarrative(payload.response);
-    if (!narrative) return report;
+    if (!narrative) {
+      return withExecutionStatus(report, {
+        model,
+        attempted: true,
+        status: "Risposta non valida",
+      });
+    }
 
     return {
       ...report,
@@ -40,12 +59,50 @@ export async function enhanceReportWithOllama(
       finalRecommendation: narrative.finalRecommendation,
       nextStep: narrative.finalRecommendation,
       ollamaEnhanced: true,
+      aiExecution: {
+        provider: "Ollama locale",
+        model,
+        attempted: true,
+        promptExecuted: true,
+        fallbackUsed: false,
+        status: "Eseguito",
+      },
     };
   } catch {
-    return report;
+    return withExecutionStatus(report, {
+      model,
+      attempted: true,
+      status: "Servizio non raggiungibile",
+    });
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function withExecutionStatus(
+  report: ScreeningReport,
+  {
+    model,
+    attempted,
+    status,
+  }: {
+    model: string;
+    attempted: boolean;
+    status: ScreeningReport["aiExecution"]["status"];
+  },
+): ScreeningReport {
+  return {
+    ...report,
+    ollamaEnhanced: false,
+    aiExecution: {
+      provider: "Ollama locale",
+      model,
+      attempted,
+      promptExecuted: false,
+      fallbackUsed: true,
+      status,
+    },
+  };
 }
 
 function buildPrompt(extractedText: string, report: ScreeningReport) {

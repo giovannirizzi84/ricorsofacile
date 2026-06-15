@@ -117,6 +117,14 @@ export function analyzeFineText(
     documentQuality: getDocumentQuality(textQuality),
     analysisMethod: options.method,
     ollamaEnhanced: false,
+    aiExecution: {
+      provider: "Ollama locale",
+      model: process.env.OLLAMA_MODEL || "qwen3:8b",
+      attempted: false,
+      promptExecuted: false,
+      fallbackUsed: true,
+      status: "Non tentato",
+    },
     identifiedData,
     extractedData,
     violatedRule: {

@@ -577,12 +577,16 @@ function Report({ report }: { report: ScreeningReport }) {
                 note="Misura tecnica, non probabilità di esito"
               />
               <InfoBox
-                label="Ollama"
-                value={report.ollamaEnhanced ? "Utilizzato" : "Non disponibile"}
+                label="Prompt AI narrativo"
+                value={
+                  report.aiExecution.promptExecuted
+                    ? "Eseguito"
+                    : "Non eseguito"
+                }
                 note={
-                  report.ollamaEnhanced
-                    ? "Sintesi narrativa locale"
-                    : "Report prodotto dalle sole regole"
+                  report.aiExecution.promptExecuted
+                    ? `${report.aiExecution.provider} · ${report.aiExecution.model}`
+                    : `${report.aiExecution.status}. Report prodotto dal motore di regole.`
                 }
               />
             </div>

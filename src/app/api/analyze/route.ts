@@ -64,6 +64,7 @@ export async function POST(request: Request) {
           warnings: document.warnings,
         })),
         ollamaEnhanced: report.ollamaEnhanced,
+        aiExecution: report.aiExecution,
       },
     });
   } catch (error) {

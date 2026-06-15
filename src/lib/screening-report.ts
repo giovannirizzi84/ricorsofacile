@@ -74,6 +74,19 @@ export type ScreeningReport = {
   documentQuality: "Buona" | "Parziale" | "Insufficiente";
   analysisMethod: "OCR + regole" | "Testo PDF + regole";
   ollamaEnhanced: boolean;
+  aiExecution: {
+    provider: "Ollama locale";
+    model: string;
+    attempted: boolean;
+    promptExecuted: boolean;
+    fallbackUsed: boolean;
+    status:
+      | "Non tentato"
+      | "Disattivato"
+      | "Eseguito"
+      | "Servizio non raggiungibile"
+      | "Risposta non valida";
+  };
   identifiedData: IdentifiedFineData;
   extractedData: ExtractedDataField[];
   violatedRule: {
