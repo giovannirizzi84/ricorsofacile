@@ -31,12 +31,14 @@ export async function enhanceReportWithOllama(
     if (!response.ok) return report;
 
     const payload = (await response.json()) as { response?: string };
-    const narrative = payload.response?.trim();
+    const narrative = parseNarrative(payload.response);
     if (!narrative) return report;
 
     return {
       ...report,
-      summary: narrative.slice(0, 1800),
+      summary: narrative.summary,
+      finalRecommendation: narrative.finalRecommendation,
+      nextStep: narrative.finalRecommendation,
       ollamaEnhanced: true,
     };
   } catch {
@@ -48,23 +50,79 @@ export async function enhanceReportWithOllama(
 
 function buildPrompt(extractedText: string, report: ScreeningReport) {
   return `
-Analizza il seguente testo estratto da un verbale di multa. Fornisci una
-valutazione preliminare, non un parere legale, indicando esclusivamente
-elementi da approfondire, possibili criticità, verifiche consigliate, termini
-da verificare e documenti mancanti.
+Sei un assistente che migliora esclusivamente la forma narrativa di uno
+screening preliminare di un verbale stradale. I dati strutturati forniti sono
+l'unica fonte ammessa.
 
-Non inventare norme, articoli, date o fatti. Non usare espressioni come
-"ricorso fondato", "multa annullabile", "probabilità di successo" o promesse
-di accoglimento. Scrivi un solo paragrafo prudente in italiano, massimo 180
-parole.
+REGOLE OBBLIGATORIE:
+- non inventare dati, norme, articoli, date, fatti o criticità;
+- non dedurre articoli o commi;
+- non modificare i valori strutturati;
+- non usare "ricorso fondato", "multa annullabile", "probabilità di successo",
+  "vittoria" o promesse di annullamento;
+- distinguere sempre dato rilevato, incertezza e verifica consigliata;
+- restituire soltanto JSON valido, senza markdown.
 
-Motivi rilevati dalle regole:
-${report.reasons.map((reason) => `- ${reason.title}: ${reason.evidence}`).join("\n")}
+Formato richiesto:
+{
+  "summary": "massimo 120 parole, tono neutro e prudente",
+  "finalRecommendation": "massimo 70 parole, conclusione prudente"
+}
 
-Documenti mancanti:
-${report.missingDocuments.join(", ") || "nessuno rilevato"}
+DATI STRUTTURATI:
+${JSON.stringify(
+  {
+    preliminaryOutcome: report.outcome,
+    extractedData: report.extractedData,
+    violationClassification: report.violationClassification,
+    legalRule: report.violatedRule,
+    eventSummary: report.eventSummary,
+    potentialIssues: report.reasons.map((reason) => ({
+      title: reason.title,
+      evidence: reason.evidence,
+    })),
+    economicConvenience: report.economicConvenience,
+    missingDocuments: report.missingDocuments,
+  },
+  null,
+  2,
+)}
 
-Testo estratto:
-${extractedText.slice(0, 12_000)}
+TESTO ORIGINALE, SOLO PER CONTROLLO DI COERENZA:
+${extractedText.slice(0, 8_000)}
 `.trim();
+}
+
+function parseNarrative(value?: string) {
+  if (!value) return null;
+  const json = value.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) return null;
+
+  try {
+    const parsed = JSON.parse(json) as {
+      summary?: unknown;
+      finalRecommendation?: unknown;
+    };
+    if (
+      typeof parsed.summary !== "string" ||
+      typeof parsed.finalRecommendation !== "string"
+    ) {
+      return null;
+    }
+    const summary = parsed.summary.trim().slice(0, 1200);
+    const finalRecommendation = parsed.finalRecommendation.trim().slice(0, 700);
+    const forbidden =
+      /ricorso\s+fondato|multa\s+annullabile|probabilit[aà]\s+di\s+successo|vittoria|annullamento\s+garantito/i;
+    if (
+      !summary ||
+      !finalRecommendation ||
+      forbidden.test(summary) ||
+      forbidden.test(finalRecommendation)
+    ) {
+      return null;
+    }
+    return { summary, finalRecommendation };
+  } catch {
+    return null;
+  }
 }

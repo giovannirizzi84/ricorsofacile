@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       warnings,
     });
     const report = await enhanceReportWithOllama(extractedText, ruleReport);
+    logExtractionResult(report);
 
     return NextResponse.json({
       report,
@@ -106,4 +107,27 @@ function validateFiles(files: File[]) {
 function readText(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim().slice(0, 500) : "";
+}
+
+function logExtractionResult(
+  report: ReturnType<typeof analyzeFineText>,
+) {
+  const identifiedData = report.extractedData
+    .filter((field) => field.confidence !== "Non rilevato")
+    .map((field) => ({
+      field: field.key,
+      confidence: field.confidence,
+    }));
+  const missingData = report.extractedData
+    .filter((field) => field.confidence === "Non rilevato")
+    .map((field) => ({
+      field: field.key,
+      confidence: field.confidence,
+    }));
+
+  console.info("Fine analysis extraction log", {
+    identifiedData,
+    missingData,
+    overallConfidence: report.confidence,
+  });
 }

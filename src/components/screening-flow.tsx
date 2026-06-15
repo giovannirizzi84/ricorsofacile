@@ -510,15 +510,12 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
 }
 
 function Report({ report }: { report: ScreeningReport }) {
-  const insufficient = report.outcome === "Documentazione insufficiente";
-  const needsReview =
-    report.outcome === "Elementi da approfondire" ||
-    report.outcome === "Verifica consigliata";
-  const accent = insufficient
-    ? "border-amber-200 bg-amber-50/40 text-amber-900"
-    : needsReview
-      ? "border-sky-200 bg-sky-50/40 text-sky-950"
-      : "border-emerald-200 bg-emerald-50/40 text-emerald-900";
+  const accent =
+    report.outcome === "Alto interesse all’approfondimento"
+      ? "border-amber-200 bg-amber-50/40 text-amber-950"
+      : report.outcome === "Medio interesse all’approfondimento"
+        ? "border-sky-200 bg-sky-50/40 text-sky-950"
+        : "border-emerald-200 bg-emerald-50/40 text-emerald-900";
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -552,7 +549,7 @@ function Report({ report }: { report: ScreeningReport }) {
           <Card className={accent}>
             <CardContent className="p-7">
               <div>
-                <p className="text-sm opacity-70">Valutazione preliminare</p>
+                <p className="text-sm opacity-70">1. Esito preliminare</p>
                 <h2 className="mt-2 text-2xl font-semibold">
                   {report.outcome}
                 </h2>
@@ -563,25 +560,11 @@ function Report({ report }: { report: ScreeningReport }) {
             </CardContent>
           </Card>
 
-          <ReportSection title="1. Dati identificati" icon={ClipboardList}>
-            <DataGrid
-              items={[
-                ["Ente accertatore", report.identifiedData.authority],
-                ["Comune", report.identifiedData.municipality],
-                ["Numero verbale", report.identifiedData.reportNumber],
-                ["Targa", report.identifiedData.plate],
-                ["Data violazione", report.identifiedData.violationDate],
-                ["Ora violazione", report.identifiedData.violationTime],
-                ["Data notifica", report.identifiedData.notificationDate],
-                ["Importo sanzione", report.identifiedData.amount],
-                [
-                  "Importo ridotto entro 5 giorni",
-                  report.identifiedData.reducedAmount,
-                ],
-                ["Tipo violazione", report.identifiedData.violationType],
-                ["Luogo", report.identifiedData.place],
-              ]}
-            />
+          <ReportSection
+            title="2. Dati estratti dal verbale"
+            icon={ClipboardList}
+          >
+            <ExtractedDataGrid items={report.extractedData} />
             <div className="grid gap-3 pt-2 sm:grid-cols-3">
               <InfoBox
                 label="Metodo"
@@ -605,26 +588,36 @@ function Report({ report }: { report: ScreeningReport }) {
             </div>
           </ReportSection>
 
-          <ReportSection title="2. Norma violata" icon={Gavel}>
+          <ReportSection title="3. Norma individuata" icon={Gavel}>
             <div className="grid gap-4 sm:grid-cols-2">
               <InfoBox
                 label="Articolo"
                 value={report.violatedRule.article}
-                note="Dato letto dal documento"
+                note={`Affidabilità: ${report.violatedRule.confidence}`}
               />
               <InfoBox
                 label="Comma"
                 value={report.violatedRule.paragraph}
-                note="Dato letto dal documento"
+                note={`Affidabilità: ${
+                  report.extractedData.find((item) => item.key === "paragraph")
+                    ?.confidence ?? "Non rilevato"
+                }`}
               />
             </div>
             <div className="rounded-xl border p-5">
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Classificazione preliminare
-              </p>
-              <p className="mt-2 font-semibold">
-                {report.violatedRule.classification}
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Classificazione preliminare
+                  </p>
+                  <p className="mt-2 font-semibold">
+                    {report.violationClassification.value}
+                  </p>
+                </div>
+                <ConfidenceBadge
+                  confidence={report.violationClassification.confidence}
+                />
+              </div>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 {report.violatedRule.description}
               </p>
@@ -632,7 +625,7 @@ function Report({ report }: { report: ScreeningReport }) {
           </ReportSection>
 
           <ReportSection
-            title="3. Descrizione sintetica dell’accaduto"
+            title="4. Descrizione dell’accaduto"
             icon={FileText}
           >
             <p className="rounded-xl bg-slate-50 p-5 text-sm leading-7 text-slate-700">
@@ -640,7 +633,10 @@ function Report({ report }: { report: ScreeningReport }) {
             </p>
           </ReportSection>
 
-          <ReportSection title="4. Possibili criticità" icon={BadgeCheck}>
+          <ReportSection
+            title="5. Possibili elementi da approfondire"
+            icon={BadgeCheck}
+          >
             {report.reasons.length > 0 ? (
               report.reasons.map((reason) => (
                 <Reason
@@ -654,15 +650,15 @@ function Report({ report }: { report: ScreeningReport }) {
               ))
             ) : (
               <p className="text-sm text-slate-600">
-                Non sono emerse criticità automatiche evidenti dai documenti
-                disponibili. La verifica del documento originale resta
-                consigliata.
+                Dal solo documento caricato non emergono criticità evidenti.
+                Potrebbe comunque essere utile una verifica professionale in
+                presenza di ulteriori documenti o circostanze.
               </p>
             )}
           </ReportSection>
 
           <ReportSection
-            title="5. Termini di ricorso"
+            title="6. Termini di ricorso"
             icon={CalendarDays}
           >
             {report.deadlines.map((deadline) => (
@@ -686,22 +682,29 @@ function Report({ report }: { report: ScreeningReport }) {
             ))}
           </ReportSection>
 
-          <ReportSection title="6. Valutazione preliminare" icon={FileSearch}>
-            <p className="rounded-xl bg-[#eef5f3] p-5 text-sm leading-7 text-slate-700">
-              {report.preliminaryAssessment}
+          <ReportSection
+            title="7. Convenienza economica preliminare"
+            icon={FileSearch}
+          >
+            <InfoBox
+              label="Livello"
+              value={`Convenienza ${report.economicConvenience.level.toLowerCase()}`}
+              note={report.economicConvenience.reason}
+            />
+            <p className="rounded-xl border border-[#dbe8e4] bg-[#eef5f3] p-5 text-sm font-medium leading-7 text-[#174c48]">
+              {report.economicConvenience.possiblePackage}
             </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <InfoBox
-                label="Percorso indicativo"
-                value={report.suggestedPath.route}
-                note={report.suggestedPath.rationale}
-              />
-              <InfoBox
-                label="Qualità documenti"
-                value={report.documentQuality}
-                note={report.suggestedPath.risks}
-              />
-            </div>
+          </ReportSection>
+
+          <ReportSection title="8. Raccomandazione finale" icon={Scale}>
+            <p className="rounded-xl bg-[#eef5f3] p-5 text-sm leading-7 text-slate-700">
+              {report.finalRecommendation}
+            </p>
+            <InfoBox
+              label="Qualità documenti"
+              value={report.documentQuality}
+              note={report.suggestedPath.risks}
+            />
           </ReportSection>
 
           <ReportSection title="Fonti da verificare" icon={BookOpen}>
@@ -894,17 +897,46 @@ function BulletList({
   );
 }
 
-function DataGrid({ items }: { items: Array<[string, string]> }) {
+function ExtractedDataGrid({
+  items,
+}: {
+  items: ScreeningReport["extractedData"];
+}) {
   return (
     <dl className="grid gap-3 sm:grid-cols-2">
-      {items.map(([label, value]) => (
-        <div key={label} className="rounded-xl border p-4">
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            {label}
+      {items.map((item) => (
+        <div key={item.key} className="rounded-xl border p-4">
+          <dt className="flex items-start justify-between gap-3">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
+              {item.label}
+            </span>
+            <ConfidenceBadge confidence={item.confidence} />
           </dt>
-          <dd className="mt-2 font-medium leading-6">{value}</dd>
+          <dd className="mt-3 font-medium leading-6">{item.value}</dd>
+          <dd className="mt-2 text-xs text-slate-500">
+            Affidabilità: {item.confidence}
+          </dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+function ConfidenceBadge({
+  confidence,
+}: {
+  confidence: ScreeningReport["extractedData"][number]["confidence"];
+}) {
+  const className =
+    confidence === "Alta"
+      ? "bg-emerald-100 text-emerald-800"
+      : confidence === "Media"
+        ? "bg-amber-100 text-amber-800"
+        : "bg-slate-100 text-slate-600";
+
+  return (
+    <Badge variant="secondary" className={className}>
+      {confidence}
+    </Badge>
   );
 }
