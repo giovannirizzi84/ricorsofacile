@@ -221,9 +221,17 @@ test("golden-rovigo-speeding", async () => {
   assert.equal(report.economicConvenience.possiblePackage, "Consulenza Legale €19,90");
   assert.equal(report.economicConvenience.ctaLabel, "Richiedi consulenza legale €19,90");
   assert.equal(report.economicConvenience.ctaHref, "/prezzi?pacchetto=consulenza");
+  assert.match(report.economicConvenience.reason, /3 punti patente/);
   assert.match(
     report.finalRecommendation,
-    /presenza di punti patente e la natura tecnica dell’accertamento tramite autovelox/,
+    /presenza di 3 punti patente e la natura tecnica dell’accertamento tramite autovelox/,
+  );
+  assert.ok(
+    report.potentialIssues.some((issue) =>
+      issue.includes("Non emergono criticità formali evidenti") &&
+      issue.includes("documentazione fotografica") &&
+      issue.includes("taratura/verifica periodica"),
+    ),
   );
   assert.match(
     report.deadlines[0].basis,
@@ -238,6 +246,21 @@ test("golden-rovigo-speeding", async () => {
   assert.doesNotMatch(visibleText, /METODO|QUALITÀ ESTRAZIONE|ANALISI AI|MOTORE REGOLE|Testo estratto dal verbale/i);
   assert.doesNotMatch(visibleText, /Testo PDF \+ regole|OCR e regole|Qualità estrazione|Analisi AI non disponibile|Motore regole usato/i);
   assertPrudentLanguage(report);
+});
+
+test("il flusso utente non mostra termini tecnici nel consenso e nel riepilogo", async () => {
+  const component = await readFile(
+    new URL("../src/components/screening-flow.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(
+    component,
+    /OCR|Gemini|Google Gemini|fallback|motore di regole|regole deterministiche|testo estratto|Modalità: OCR \+ regole \+ AI/i,
+  );
+  assert.match(component, /Avvia l’analisi preliminare/);
+  assert.match(component, /Maggiori informazioni sul trattamento dei dati/);
+  assert.match(component, /Avanzamento analisi/);
 });
 
 test("classifica un divieto di sosta", () => {

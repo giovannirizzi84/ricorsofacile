@@ -1056,6 +1056,9 @@ function buildConsistencyChecks(
 function buildPotentialIssues(facts: ExtractedFacts, reasons: RuleResult[]) {
   const issues = reasons.map((item) => `${item.title}: ${item.evidence}`);
   if (facts.deviceType === "Autovelox" || facts.article === "142") {
+    issues.push(
+      "Non emergono criticità formali evidenti dal solo verbale caricato. Tuttavia, trattandosi di accertamento tramite autovelox, può essere utile verificare la documentazione fotografica, la segnalazione preventiva, la taratura/verifica periodica e gli atti tecnici disponibili presso l’ente.",
+    );
     if (facts.deviceName || facts.approvalDecree || facts.calibrationCheck) {
       issues.push(
         `Il verbale indica apparecchiatura ${facts.deviceName ?? "non rilevata"}, richiama decreto di approvazione e controlli periodici. Può essere utile verificare la documentazione tecnica agli atti, la segnalazione preventiva e i fotogrammi.`,
@@ -1118,7 +1121,10 @@ function buildEconomicConvenience(
     return {
       level: "Media-bassa",
       reason:
-        "L’importo non è elevato, ma la presenza di punti patente e la natura tecnica dell’accertamento rendono ragionevole una verifica professionale prima di decidere se procedere con ricorso.",
+        `L’importo non è elevato, ma la presenza di ${facts.licensePoints ?? ""} punti patente e la natura tecnica dell’accertamento tramite autovelox rendono ragionevole una verifica professionale prima di decidere se procedere con ricorso.`.replace(
+          "di  punti",
+          "di punti",
+        ),
       possiblePackage: "Consulenza Legale €19,90",
       ctaLabel: "Richiedi consulenza legale €19,90",
       ctaHref: "/prezzi?pacchetto=consulenza",
@@ -1174,7 +1180,10 @@ function buildFinalRecommendation(
     parseAmountNumber(facts.amount)! <= 250 &&
     (facts.licensePoints || facts.violationType === "Autovelox / Eccesso di velocità")
   ) {
-    return "Considerato l’importo non elevato ma la presenza di punti patente e la natura tecnica dell’accertamento tramite autovelox, può essere opportuno partire da una consulenza legale prima di valutare un ricorso.";
+    return `Considerato l’importo non elevato, ma la presenza di ${facts.licensePoints ?? ""} punti patente e la natura tecnica dell’accertamento tramite autovelox, può essere opportuno partire da una consulenza legale prima di valutare un eventuale ricorso.`.replace(
+      "di  punti",
+      "di punti",
+    );
   }
   if (facts.amount && parseAmountNumber(facts.amount)! <= 250) {
     return "Per sanzioni di importo contenuto, può essere opportuno partire da una consulenza legale prima di valutare un ricorso.";

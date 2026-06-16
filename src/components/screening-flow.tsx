@@ -57,7 +57,9 @@ export function ScreeningFlow() {
   const [caseData, setCaseData] = useState(initialCaseData);
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
-  const [processingStage, setProcessingStage] = useState("Analisi OCR in corso…");
+  const [processingStage, setProcessingStage] = useState(
+    "Analisi del documento in corso…",
+  );
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [report, setReport] = useState<ScreeningReport | null>(null);
@@ -79,14 +81,14 @@ export function ScreeningFlow() {
 
     setError("");
     setProcessing(true);
-    setProcessingStage("Analisi OCR in corso…");
+    setProcessingStage("Analisi del documento in corso…");
     const stageTimers = [
       window.setTimeout(
-        () => setProcessingStage("Testo estratto dal verbale…"),
+        () => setProcessingStage("Lettura delle informazioni principali…"),
         2500,
       ),
       window.setTimeout(
-        () => setProcessingStage("Applicazione regole preliminari…"),
+        () => setProcessingStage("Valutazione preliminare in corso…"),
         5000,
       ),
       window.setTimeout(
@@ -167,7 +169,7 @@ export function ScreeningFlow() {
                     <StepTitle
                       icon={FileText}
                       title="Raccontaci della multa"
-                      text="Inserisci i dati essenziali. L’AI li confronterà con ciò che riesce a leggere nei documenti."
+                      text="Inserisci i dati essenziali: ci aiuteranno a contestualizzare il verbale e a preparare un report più chiaro."
                     />
                     <div className="mt-8 grid gap-5 sm:grid-cols-2">
                       <Field label="Data di notifica">
@@ -297,8 +299,8 @@ export function ScreeningFlow() {
                   <div>
                     <StepTitle
                       icon={FileSearch}
-                      title="Avvia l’analisi automatizzata"
-                      text="Il documento viene elaborato tramite OCR, motore di regole e Gemini, quando disponibile."
+                      title="Avvia l’analisi preliminare"
+                      text="Il documento verrà esaminato automaticamente per individuare le principali informazioni contenute nel verbale e generare un report preliminare con elementi, termini e aspetti che potrebbero meritare approfondimento."
                     />
                     <div className="mt-8 rounded-2xl border bg-[#f5f8f7] p-5">
                       <div className="flex items-start gap-4">
@@ -308,14 +310,18 @@ export function ScreeningFlow() {
                             Analisi preliminare automatizzata
                           </p>
                           <p className="mt-2 text-sm leading-6 text-slate-600">
-                            Il sistema leggerà {files.length} document
-                            {files.length === 1 ? "o" : "i"}, estrarrà i fatti e
-                            applicherà regole preliminari. I file non vengono
-                            salvati da questa applicazione; quando Gemini è
-                            disponibile, il testo estratto viene inviato a
-                            Google per completare l’analisi. In caso contrario
-                            il report viene prodotto dal motore di regole.
+                            Il sistema analizzerà {files.length} document
+                            {files.length === 1 ? "o" : "i"} caricat
+                            {files.length === 1 ? "o" : "i"} ed elaborerà un
+                            report riepilogativo. L’analisi ha finalità
+                            esclusivamente informative e preliminari.
                           </p>
+                          <Link
+                            href="/privacy"
+                            className="mt-3 inline-block text-xs font-medium text-[#0f756d] underline-offset-4 hover:underline"
+                          >
+                            Maggiori informazioni sul trattamento dei dati
+                          </Link>
                         </div>
                       </div>
                     </div>
@@ -323,12 +329,12 @@ export function ScreeningFlow() {
                       <Consent
                         checked={privacyAccepted}
                         onCheckedChange={setPrivacyAccepted}
-                        text="Acconsento all’elaborazione temporanea dei documenti e all’invio del testo estratto a Google Gemini, quando disponibile, per effettuare lo screening preliminare."
+                        text="Acconsento all’elaborazione temporanea dei documenti caricati ai fini dello screening preliminare."
                       />
                       <Consent
                         checked={disclaimerAccepted}
                         onCheckedChange={setDisclaimerAccepted}
-                        text="Comprendo che il risultato è preliminare, può contenere errori e non costituisce parere legale né garanzia di accoglimento."
+                        text="Comprendo che il risultato è preliminare, può contenere errori e non costituisce parere legale, consulenza professionale o garanzia di accoglimento di un eventuale ricorso."
                       />
                     </div>
                     {error && (
@@ -368,8 +374,8 @@ export function ScreeningFlow() {
             <LoaderCircle className="mx-auto size-12 animate-spin text-lime-300" />
             <h2 className="mt-6 text-2xl font-semibold">{processingStage}</h2>
             <p className="mt-3 text-sm leading-6 text-white/65">
-              Lettura del verbale, estrazione dei fatti e valutazione tramite
-              regole deterministiche. L’OCR può richiedere circa un minuto.
+              Stiamo esaminando il verbale e preparando il report preliminare.
+              L’operazione può richiedere circa un minuto.
             </p>
           </div>
         </div>
@@ -499,12 +505,8 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
           <span>{files || "Da caricare"}</span>
         </div>
         <div className="flex justify-between border-b py-3 text-slate-600">
-          <span>Avanzamento</span>
+          <span>Avanzamento analisi</span>
           <span>{(step + 1) * 25}%</span>
-        </div>
-        <div className="flex justify-between pt-3 font-semibold">
-          <span>Modalità</span>
-          <span>OCR + regole + AI</span>
         </div>
       </div>
     </aside>
