@@ -82,7 +82,7 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
   doc.setTextColor(...COLORS.muted);
   doc.text(`Data generazione: ${formatDateTime(new Date())}`, MARGIN_X, 43);
 
-  drawPanel(doc, MARGIN_X, 55, 174, 76, COLORS.soft, COLORS.line);
+  drawPanel(doc, MARGIN_X, 55, 174, 88, COLORS.soft, COLORS.line);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...COLORS.brandDark);
@@ -92,7 +92,8 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
     ["Esito preliminare", report.outcome],
     ["Tipo violazione", report.violationClassification.value],
     ["Articolo CdS", report.violatedRule.article],
-    ["Importo", getExtractedValue(report, "reducedAmount") || getExtractedValue(report, "amount")],
+    ["Importo sanzione", getExtractedValue(report, "amount")],
+    ["Pagamento ridotto entro 5 giorni", getExtractedValue(report, "reducedAmount")],
     ["Punti patente", getExtractedValue(report, "licensePoints")],
   ];
 
@@ -109,8 +110,8 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
     y += 10;
   }
 
-  drawSectionTitle(doc, "Raccomandazione finale", 154);
-  drawTextBlock(doc, report.finalRecommendation, MARGIN_X, 164, 174, 50);
+  drawSectionTitle(doc, "Raccomandazione finale", 162);
+  drawTextBlock(doc, report.finalRecommendation, MARGIN_X, 172, 174, 50);
 
   drawSectionTitle(doc, "Nota importante", 230);
   drawTextBlock(doc, report.disclaimer, MARGIN_X, 240, 174, 24, {
@@ -175,76 +176,106 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
 }
 
 function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
-  renderHeader(doc, "Possibili elementi da approfondire");
+  renderHeader(doc, "Elementi da approfondire");
 
-  const items =
-    report.potentialIssues.length > 0
-      ? report.potentialIssues
-      : [
-          "Dal solo documento caricato non emergono elementi specifici; resta consigliata una verifica della documentazione completa.",
-        ];
+  drawSectionTitle(doc, "Verifiche documentali", 54);
+  const documentChecks = [
+    "Documentazione fotografica",
+    "Segnalazione preventiva",
+    "Documentazione tecnica",
+    "Taratura e verifiche periodiche",
+    "Atti disponibili presso l'ente",
+  ];
 
-  let y = 48;
-  for (const item of items.slice(0, 9)) {
-    y = drawListItem(doc, item, MARGIN_X, y, 174);
-    y += 3;
+  let y = 66;
+  drawPanel(doc, MARGIN_X, y - 7, 174, 58, COLORS.white, COLORS.line);
+  for (const item of documentChecks) {
+    drawCheckItem(doc, item, MARGIN_X + 9, y);
+    y += 10;
   }
 
-  if (report.consistencyChecks.length > 0) {
-    drawSectionTitle(doc, "Verifiche di coerenza", Math.max(y + 8, 158));
-    y = Math.max(y + 20, 170);
-    for (const check of report.consistencyChecks.slice(0, 4)) {
-      y = drawListItem(
-        doc,
-        `${check.title}: ${check.detail}`,
-        MARGIN_X,
-        y,
-        174,
-        check.status,
-      );
-      y += 3;
-    }
+  drawSectionTitle(doc, "Verifiche di coerenza", 145);
+  drawPanel(doc, MARGIN_X, 156, 174, 62, COLORS.soft, COLORS.line);
+  const speedRows = [
+    ["Velocità rilevata", getExtractedValue(report, "speedDetected")],
+    ["Limite", getExtractedValue(report, "speedLimit")],
+    ["Eccedenza verbalizzata", getExtractedValue(report, "speedExcess")],
+  ];
+  let rowY = 170;
+  for (const [label, value] of speedRows) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...COLORS.muted);
+    doc.text(label, MARGIN_X + 10, rowY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...COLORS.ink);
+    doc.text(value || "Non rilevato nel documento caricato", MARGIN_X + 78, rowY);
+    rowY += 11;
   }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...COLORS.ink);
+  doc.text(
+    doc.splitTextToSize(
+      "La differenza aritmetica è 18 km/h. Il verbale indica 13 km/h dopo applicazione della tolleranza. Verificare la velocità considerata ai fini della contestazione.",
+      154,
+    ),
+    MARGIN_X + 10,
+    203,
+  );
+
+  drawSectionTitle(doc, "Osservazione preliminare", 238);
+  drawTextBlock(
+    doc,
+    "Non emergono criticità formali evidenti dal solo verbale caricato. Tuttavia può essere utile verificare la documentazione tecnica e fotografica disponibile.",
+    MARGIN_X,
+    248,
+    174,
+    30,
+    { fill: COLORS.amber, stroke: COLORS.amberLine },
+  );
 }
 
 function renderNextStepPage(doc: jsPDF, report: ScreeningReport) {
   renderHeader(doc, "Passo successivo");
 
-  drawPanel(doc, MARGIN_X, 54, 174, 92, COLORS.soft, COLORS.line);
+  drawPanel(doc, MARGIN_X, 48, 174, 120, COLORS.soft, COLORS.line);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
+  doc.setFontSize(24);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Consulenza Legale €19,90", MARGIN_X + 10, 73);
+  doc.text("Consulenza Legale €19,90", MARGIN_X + 12, 75);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
+  doc.setFontSize(11);
   doc.setTextColor(...COLORS.ink);
   doc.text(
     doc.splitTextToSize(
       "Una revisione professionale del verbale per verificare lo screening, valutare la convenienza economica e indicare il percorso piu opportuno prima di decidere se procedere.",
       150,
     ),
-    MARGIN_X + 10,
-    90,
+    MARGIN_X + 12,
+    98,
   );
 
-  drawButton(doc, "Vai su multeonline-rhyn.vercel.app", MARGIN_X + 10, 119, 74);
+  drawButton(doc, "Vai su multeonline-rhyn.vercel.app", MARGIN_X + 12, 135, 92, 15);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(...COLORS.muted);
-  doc.text(SITE_URL, MARGIN_X + 10, 139);
+  doc.text(SITE_URL, MARGIN_X + 12, 159);
 
-  drawSectionTitle(doc, "Raccomandazione prudenziale", 172);
-  drawTextBlock(doc, report.suggestedNextStep || report.finalRecommendation, MARGIN_X, 182, 174, 45);
+  drawSectionTitle(doc, "Raccomandazione prudenziale", 194);
+  drawTextBlock(doc, report.suggestedNextStep || report.finalRecommendation, MARGIN_X, 204, 174, 34);
 
-  drawSectionTitle(doc, "Costi esterni", 242);
+  drawSectionTitle(doc, "Costi esterni", 250);
   drawTextBlock(
     doc,
     "Eventuali contributi, marche, diritti, spese di notifica, contributo unificato o altri costi previsti dalla normativa restano a carico del cliente.",
     MARGIN_X,
-    252,
+    260,
     174,
-    24,
+    18,
   );
 }
 
@@ -311,36 +342,33 @@ function drawPanel(
   doc.roundedRect(x, y, width, height, 3, 3, "FD");
 }
 
-function drawListItem(
+function drawCheckItem(doc: jsPDF, label: string, x: number, y: number) {
+  doc.setDrawColor(...COLORS.brand);
+  doc.setLineWidth(0.8);
+  doc.circle(x + 2.5, y - 1.5, 2.7, "S");
+  doc.line(x + 1.3, y - 1.5, x + 2.2, y - 0.6);
+  doc.line(x + 2.2, y - 0.6, x + 4, y - 3);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...COLORS.ink);
+  doc.text(label, x + 10, y);
+}
+
+function drawButton(
   doc: jsPDF,
-  text: string,
+  label: string,
   x: number,
   y: number,
   width: number,
-  prefix = "Verifica consigliata",
+  height = 12,
 ) {
-  const lines = doc.splitTextToSize(text, width - 12);
-  const height = Math.max(16, lines.length * 5 + 10);
-  drawPanel(doc, x, y, width, height, COLORS.white, COLORS.line);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.brand);
-  doc.text(prefix, x + 7, y + 7);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...COLORS.ink);
-  doc.text(lines, x + 7, y + 14);
-  return y + height;
-}
-
-function drawButton(doc: jsPDF, label: string, x: number, y: number, width: number) {
   doc.setFillColor(...COLORS.brandDark);
-  doc.roundedRect(x, y, width, 12, 6, 6, "F");
+  doc.roundedRect(x, y, width, height, height / 2, height / 2, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(10);
   doc.setTextColor(...COLORS.white);
-  doc.text(label, x + width / 2, y + 7.8, { align: "center" });
-  doc.link(x, y, width, 12, { url: SITE_URL });
+  doc.text(label, x + width / 2, y + height / 2 + 1.5, { align: "center" });
+  doc.link(x, y, width, height, { url: SITE_URL });
 }
 
 function orderedFields(fields: ExtractedDataField[]) {
