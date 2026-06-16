@@ -567,36 +567,6 @@ function Report({ report }: { report: ScreeningReport }) {
             icon={ClipboardList}
           >
             <ExtractedDataGrid items={report.extractedData} />
-            <div className="grid gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
-              <InfoBox
-                label="Metodo"
-                value={report.analysisMethod}
-                note="OCR e regole, con Gemini quando disponibile"
-              />
-              <InfoBox
-                label="Qualità estrazione"
-                value={`${report.confidence}%`}
-                note="Misura tecnica, non probabilità di esito"
-              />
-              <InfoBox
-                label="Analisi AI"
-                value={
-                  report.aiExecution.promptExecuted
-                    ? "Completata"
-                    : "Non disponibile"
-                }
-                note={
-                  report.aiExecution.promptExecuted
-                    ? `${report.aiExecution.provider} · ${report.aiExecution.model}`
-                    : "Il report è stato prodotto senza interrompere l’analisi."
-                }
-              />
-              <InfoBox
-                label="Motore regole"
-                value={report.rulesEngineUsed ? "Usato: sì" : "Usato: no"}
-                note="Controlli deterministici applicati al testo estratto"
-              />
-            </div>
           </ReportSection>
 
           <ReportSection title="3. Norma individuata" icon={Gavel}>
@@ -648,22 +618,13 @@ function Report({ report }: { report: ScreeningReport }) {
             title="5. Possibili elementi da approfondire"
             icon={BadgeCheck}
           >
-            {report.reasons.length > 0 ? (
-              report.reasons.map((reason) => (
-                <Reason
-                  key={`${reason.title}-${reason.evidence}`}
-                  title={reason.title}
-                  strength={`Rilevanza ${reason.relevance.toLowerCase()}`}
-                  text={reason.evidence}
-                  legalBasis={reason.legalBasis}
-                  needsVerification={reason.needsVerification}
-                />
-              ))
+            {report.potentialIssues.length > 0 ? (
+              <BulletList items={report.potentialIssues} />
             ) : (
               <p className="text-sm text-slate-600">
-                Dal solo documento caricato non emergono criticità evidenti.
-                Potrebbe comunque essere utile una verifica professionale in
-                presenza di ulteriori documenti o circostanze.
+                Non emergono criticità formali evidenti dal solo verbale
+                caricato. Tuttavia può essere utile verificare eventuali
+                allegati, termini e documentazione disponibile presso l’ente.
               </p>
             )}
           </ReportSection>
@@ -705,17 +666,24 @@ function Report({ report }: { report: ScreeningReport }) {
             <p className="rounded-xl border border-[#dbe8e4] bg-[#eef5f3] p-5 text-sm font-medium leading-7 text-[#174c48]">
               {report.economicConvenience.possiblePackage}
             </p>
+            <Button
+              className="rounded-full bg-[#103d3a] text-white hover:bg-[#174c48]"
+              asChild
+            >
+              <Link href={report.economicConvenience.ctaHref}>
+                {report.economicConvenience.ctaLabel}
+              </Link>
+            </Button>
+            <p className="text-sm leading-6 text-slate-600">
+              Il team legale può verificare il verbale e indicarti se conviene
+              procedere con ricorso.
+            </p>
           </ReportSection>
 
           <ReportSection title="8. Raccomandazione finale" icon={Scale}>
             <p className="rounded-xl bg-[#eef5f3] p-5 text-sm leading-7 text-slate-700">
               {report.finalRecommendation}
             </p>
-            <InfoBox
-              label="Qualità documenti"
-              value={report.documentQuality}
-              note={report.suggestedPath.risks}
-            />
           </ReportSection>
 
           <ReportSection title="Fonti da verificare" icon={BookOpen}>
@@ -756,12 +724,6 @@ function Report({ report }: { report: ScreeningReport }) {
             </ReportSection>
           )}
 
-          <ReportSection title="Testo estratto dal verbale" icon={FileText}>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-5 font-mono text-xs leading-6 text-slate-200">
-              {report.extractedTextPreview ||
-                "Nessun testo sufficientemente leggibile."}
-            </pre>
-          </ReportSection>
         </div>
 
         <aside className="space-y-5">
@@ -829,38 +791,6 @@ function ReportSection({
         <div className="space-y-4">{children}</div>
       </CardContent>
     </Card>
-  );
-}
-
-function Reason({
-  title,
-  strength,
-  text,
-  legalBasis,
-  needsVerification,
-}: {
-  title: string;
-  strength: string;
-  text: string;
-  legalBasis: string;
-  needsVerification: boolean;
-}) {
-  return (
-    <div className="rounded-xl border p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-semibold">{title}</p>
-        <Badge variant="secondary">{strength}</Badge>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
-      <p className="mt-3 text-xs leading-5 text-slate-500">
-        <strong>Base indicata:</strong> {legalBasis}
-      </p>
-      {needsVerification && (
-        <p className="mt-2 text-xs font-medium text-amber-800">
-          Riferimento da verificare prima di procedere.
-        </p>
-      )}
-    </div>
   );
 }
 

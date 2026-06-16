@@ -39,6 +39,31 @@ function assertPrudentLanguage(report: ReturnType<typeof analyze>) {
   );
 }
 
+function visibleReportText(report: ReturnType<typeof analyze>) {
+  return [
+    report.outcome,
+    report.summary,
+    ...report.extractedData.map((item) => `${item.label}: ${item.value}`),
+    report.violatedRule.article,
+    report.violatedRule.paragraph,
+    report.violationClassification.value,
+    report.eventSummary,
+    ...report.potentialIssues,
+    ...report.deadlines.flatMap((deadline) => [
+      deadline.label,
+      deadline.date,
+      deadline.basis,
+      deadline.caution,
+    ]),
+    report.economicConvenience.level,
+    report.economicConvenience.reason,
+    report.economicConvenience.possiblePackage,
+    report.economicConvenience.ctaLabel,
+    report.finalRecommendation,
+    report.disclaimer,
+  ].join("\n");
+}
+
 test("classifica un verbale ZTL senza inventare dati mancanti", () => {
   const report = analyze(`
     COMUNE DI BOLOGNA
@@ -191,10 +216,27 @@ test("golden-rovigo-speeding", async () => {
     JSON.stringify(report.potentialIssues),
     /riferimenti tecnici non individuati/i,
   );
+  assert.equal(report.outcome, "Medio interesse all’approfondimento");
+  assert.equal(report.economicConvenience.level, "Media-bassa");
+  assert.equal(report.economicConvenience.possiblePackage, "Consulenza Legale €19,90");
+  assert.equal(report.economicConvenience.ctaLabel, "Richiedi consulenza legale €19,90");
+  assert.equal(report.economicConvenience.ctaHref, "/prezzi?pacchetto=consulenza");
+  assert.match(
+    report.finalRecommendation,
+    /presenza di punti patente e la natura tecnica dell’accertamento tramite autovelox/,
+  );
+  assert.match(
+    report.deadlines[0].basis,
+    /Data di notifica non rilevata nel documento caricato/,
+  );
+  assert.match(report.deadlines[1].basis, /Allega ricevuta, relata o avviso SEND/);
   assert.deepEqual(report.deadlines.map((deadline) => deadline.date), [
     "Generalmente 60 giorni",
     "Generalmente 30 giorni",
   ]);
+  const visibleText = visibleReportText(report);
+  assert.doesNotMatch(visibleText, /METODO|QUALITÀ ESTRAZIONE|ANALISI AI|MOTORE REGOLE|Testo estratto dal verbale/i);
+  assert.doesNotMatch(visibleText, /Testo PDF \+ regole|OCR e regole|Qualità estrazione|Analisi AI non disponibile|Motore regole usato/i);
   assertPrudentLanguage(report);
 });
 

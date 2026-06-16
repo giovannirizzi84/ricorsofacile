@@ -211,9 +211,11 @@ export type ScreeningReport = {
     note: string;
   }[];
   economicConvenience: {
-    level: "Bassa" | "Media" | "Alta" | "Non valutabile";
+    level: "Bassa" | "Media-bassa" | "Media" | "Alta" | "Non valutabile";
     reason: string;
     possiblePackage: string;
+    ctaLabel: string;
+    ctaHref: string;
   };
   finalRecommendation: string;
   suggestedNextStep: string;

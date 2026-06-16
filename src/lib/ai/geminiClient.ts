@@ -524,7 +524,7 @@ const screeningResponseSchema = {
       properties: {
         level: {
           type: "string",
-          enum: ["Bassa", "Media", "Alta", "Non valutabile"],
+          enum: ["Bassa", "Media-bassa", "Media", "Alta", "Non valutabile"],
         },
         reason: { type: "string" },
         possiblePackage: { type: "string" },

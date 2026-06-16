@@ -115,7 +115,9 @@ export function analyzeFineText(
   const reasons = rules
     .map((rule) => rule(context))
     .filter((result): result is RuleResult => Boolean(result));
-  const rawScore = reasons.reduce((total, result) => total + result.points, 0);
+  const rawScore =
+    reasons.reduce((total, result) => total + result.points, 0) +
+    calculateInterestSignals(facts);
   const textQuality = calculateTextQuality(text, facts);
   const confidence = calculateConfidence(textQuality, facts);
   const score = Math.min(100, Math.round(rawScore * (0.55 + confidence / 220)));
@@ -920,14 +922,34 @@ function calculateConfidence(textQuality: number, facts: ExtractedFacts) {
   return Math.min(100, Math.round(textQuality * 0.6 + essential * 8));
 }
 
-function getOutcome(
-  score: number,
-  confidence: number,
-): ScreeningReport["outcome"] {
+function getOutcome(score: number, confidence: number): ScreeningReport["outcome"] {
   if (confidence < 35) return "Medio interesse all’approfondimento";
-  if (score >= 55) return "Alto interesse all’approfondimento";
-  if (score >= 20) return "Medio interesse all’approfondimento";
+  if (score >= 70) return "Alto interesse all’approfondimento";
+  if (score >= 25) return "Medio interesse all’approfondimento";
   return "Basso interesse all’approfondimento";
+}
+
+function calculateInterestSignals(facts: ExtractedFacts) {
+  const amount = parseAmountNumber(facts.amount);
+  let score = 0;
+  if (amount !== undefined && amount > 500) score += 45;
+  else if (amount !== undefined && amount >= 150) score += 18;
+  else if (amount !== undefined && amount < 100) score -= 8;
+
+  if (facts.suspensionDetected) score += 45;
+  if ((facts.licensePoints ?? 0) >= 6) score += 30;
+  else if ((facts.licensePoints ?? 0) > 0) score += 18;
+  if (
+    facts.violationType === "Autovelox / Eccesso di velocità" ||
+    facts.violationType === "ZTL / accesso area vietata" ||
+    facts.violationType === "semaforo rosso"
+  ) {
+    score += 15;
+  }
+  if (facts.deviceName || facts.approvalDecree || facts.calibrationCheck) score += 8;
+  if (!facts.notificationDate) score += 8;
+  if (facts.violationType === "mancata assicurazione") score += 45;
+  return Math.max(0, score);
 }
 
 function buildSummary(
@@ -939,7 +961,7 @@ function buildSummary(
     return "Il documento non contiene abbastanza informazioni leggibili per uno screening attendibile. È consigliato caricare una copia completa e più nitida.";
   }
   if (reasons.length === 0) {
-    return "Dal solo documento caricato non emergono criticità evidenti. Potrebbe comunque essere utile una verifica professionale in presenza di ulteriori documenti o circostanze.";
+    return "Non emergono criticità formali evidenti dal solo verbale caricato. La valutazione resta preliminare e può dipendere da documentazione non inclusa nel file.";
   }
   return `Lo screening ha individuato ${reasons.length} element${reasons.length === 1 ? "o" : "i"} che potrebbero meritare verifica. L’esito "${outcome}" è preliminare e dipende dalla qualità e completezza del documento caricato.`;
 }
@@ -953,7 +975,7 @@ function buildPreliminaryAssessment(
     return "Valutazione non completabile con sufficiente attendibilità. Integrare il documento prima di assumere decisioni.";
   }
   if (reasons.length === 0) {
-    return "Non sono emerse criticità automatiche evidenti. È comunque consigliata la verifica del verbale originale e degli allegati.";
+    return "Non emergono criticità formali evidenti dal solo verbale caricato. Tuttavia può essere utile verificare allegati, termini e documentazione disponibile presso l’ente.";
   }
   const relevance = reasons.some((item) => item.relevance === "Alta")
     ? "almeno una segnalazione di rilevanza alta"
@@ -1071,9 +1093,7 @@ function buildEconomicConvenience(
   facts: ExtractedFacts,
   reasons: RuleResult[],
 ): ScreeningReport["economicConvenience"] {
-  const amount = facts.amount
-    ? Number(facts.amount.replace(".", "").replace(",", "."))
-    : undefined;
+  const amount = parseAmountNumber(facts.amount);
   const complexCase =
     facts.pointsDetected || facts.suspensionDetected || reasons.length >= 4;
 
@@ -1084,6 +1104,24 @@ function buildEconomicConvenience(
         "L’importo elevato o la possibile presenza di conseguenze accessorie può rendere utile una valutazione professionale approfondita.",
       possiblePackage:
         "Pacchetto eventualmente coerente con il caso: Ricorso Premium €149.",
+      ctaLabel: "Richiedi Ricorso Premium €149",
+      ctaHref: "/prezzi?pacchetto=premium",
+    };
+  }
+  if (
+    amount !== undefined &&
+    amount < 250 &&
+    (facts.pointsDetected ||
+      facts.violationType === "Autovelox / Eccesso di velocità" ||
+      facts.deviceName)
+  ) {
+    return {
+      level: "Media-bassa",
+      reason:
+        "L’importo non è elevato, ma la presenza di punti patente e la natura tecnica dell’accertamento rendono ragionevole una verifica professionale prima di decidere se procedere con ricorso.",
+      possiblePackage: "Consulenza Legale €19,90",
+      ctaLabel: "Richiedi consulenza legale €19,90",
+      ctaHref: "/prezzi?pacchetto=consulenza",
     };
   }
   if (
@@ -1097,6 +1135,8 @@ function buildEconomicConvenience(
         "L’importo, la complessità apparente o le possibili conseguenze accessorie richiedono una verifica del rapporto tra costi e benefici.",
       possiblePackage:
         "Pacchetto eventualmente coerente con il caso: Ricorso Smart €79.",
+      ctaLabel: "Richiedi Ricorso Smart €79",
+      ctaHref: "/prezzi?pacchetto=smart",
     };
   }
   if (amount !== undefined) {
@@ -1106,6 +1146,8 @@ function buildEconomicConvenience(
         "L’importo appare contenuto e non sono state rilevate con certezza conseguenze accessorie; può essere prudente verificare il caso prima di predisporre un ricorso.",
       possiblePackage:
         "Pacchetto eventualmente coerente con il caso: Consulenza Legale €19,90.",
+      ctaLabel: "Richiedi consulenza legale €19,90",
+      ctaHref: "/prezzi?pacchetto=consulenza",
     };
   }
   return {
@@ -1114,6 +1156,8 @@ function buildEconomicConvenience(
       "L’importo della sanzione non è stato rilevato con sufficiente certezza.",
     possiblePackage:
       "Nessun pacchetto individuabile prima di integrare i dati mancanti.",
+    ctaLabel: "Vedi i pacchetti disponibili",
+    ctaHref: "/prezzi",
   };
 }
 
@@ -1125,7 +1169,14 @@ function buildFinalRecommendation(
   if (textQuality < 35) {
     return "La documentazione caricata non consente di formulare una valutazione completa. È opportuno caricare una copia più leggibile e completa.";
   }
-  if (facts.amount && Number(facts.amount.replace(",", ".")) <= 250) {
+  if (
+    facts.amount &&
+    parseAmountNumber(facts.amount)! <= 250 &&
+    (facts.licensePoints || facts.violationType === "Autovelox / Eccesso di velocità")
+  ) {
+    return "Considerato l’importo non elevato ma la presenza di punti patente e la natura tecnica dell’accertamento tramite autovelox, può essere opportuno partire da una consulenza legale prima di valutare un ricorso.";
+  }
+  if (facts.amount && parseAmountNumber(facts.amount)! <= 250) {
     return "Per sanzioni di importo contenuto, può essere opportuno partire da una consulenza legale prima di valutare un ricorso.";
   }
   if (outcome === "Basso interesse all’approfondimento") {
@@ -1136,23 +1187,40 @@ function buildFinalRecommendation(
 
 function buildDeadlines(notificationDate?: Date) {
   const commonCaution =
-    "I termini effettivi devono essere verificati sulla base della data di notifica e delle circostanze concrete.";
+    "Il calcolo è indicativo e deve essere verificato in base alle modalità di notifica e al caso concreto.";
+  if (notificationDate) {
+    return [
+      {
+        label: "Prefetto",
+        date: formatDate(addDays(notificationDate, 60)),
+        basis: "Scadenza indicativa Prefetto: 60 giorni dalla data di notifica rilevata.",
+        caution: commonCaution,
+      },
+      {
+        label: "Giudice di Pace",
+        date: formatDate(addDays(notificationDate, 30)),
+        basis: "Scadenza indicativa Giudice di Pace: 30 giorni dalla data di notifica rilevata.",
+        caution: commonCaution,
+      },
+    ];
+  }
+
   return [
     {
       label: "Prefetto",
       date: "Generalmente 60 giorni",
-      basis: notificationDate
-        ? `Dalla contestazione o notificazione. Data di notifica rilevata: ${formatDate(notificationDate)}.`
-        : "Dalla contestazione o notificazione. La data di notifica non è stata rilevata.",
-      caution: commonCaution,
+      basis:
+        "Data di notifica non rilevata nel documento caricato. Per calcolare la scadenza precisa è necessario conoscere la data di notifica o allegare ricevuta, relata o avviso SEND.",
+      caution:
+        "Prefetto: generalmente 60 giorni dalla contestazione o notificazione.",
     },
     {
       label: "Giudice di Pace",
       date: "Generalmente 30 giorni",
-      basis: notificationDate
-        ? `Dalla contestazione o notificazione. Data di notifica rilevata: ${formatDate(notificationDate)}.`
-        : "Dalla contestazione o notificazione. La data di notifica non è stata rilevata.",
-      caution: commonCaution,
+      basis:
+        "Allega ricevuta, relata o avviso SEND per consentire il calcolo preciso dei termini.",
+      caution:
+        "Giudice di Pace: generalmente 30 giorni dalla contestazione o notificazione.",
     },
   ];
 }
@@ -1671,8 +1739,20 @@ function daysBetween(start: Date, end: Date) {
   return Math.floor((end.getTime() - start.getTime()) / 86_400_000);
 }
 
+function addDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("it-IT", { dateStyle: "long" }).format(date);
+}
+
+function parseAmountNumber(amount?: string) {
+  if (!amount) return undefined;
+  const value = Number(amount.replace(".", "").replace(",", "."));
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function getDocumentQuality(
