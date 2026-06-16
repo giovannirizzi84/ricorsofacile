@@ -29,6 +29,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { generateScreeningReportPdf } from "@/lib/pdf/screeningReportPdf";
 import type { ScreeningReport } from "@/lib/screening-report";
 
 const stepLabels = [
@@ -542,9 +543,9 @@ function Report({ report }: { report: ScreeningReport }) {
         <Button
           variant="outline"
           className="rounded-full print:hidden"
-          onClick={() => window.print()}
+          onClick={() => generateScreeningReportPdf(report)}
         >
-          <Printer className="size-4" /> Stampa report
+          <Printer className="size-4" /> Scarica PDF
         </Button>
       </div>
 
