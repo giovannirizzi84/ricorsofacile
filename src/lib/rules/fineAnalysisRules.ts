@@ -3,6 +3,7 @@ import {
   NOT_DETECTED,
   SCREENING_DISCLAIMER,
   VIOLATION_NOT_CLASSIFIED,
+  type ClassifiedDocumentPage,
   type ExtractedDataField,
   type FieldConfidence,
   type IdentifiedFineData,
@@ -23,20 +24,40 @@ type RuleContext = {
   facts: ExtractedFacts;
 };
 
+type DocumentPagePipeline = {
+  pages: ClassifiedDocumentPage[];
+  mainVerbaleText: string;
+  paymentText: string;
+  warningsText: string;
+  selectedMainVerbalePage: number | null;
+  validationWarnings: string[];
+};
+
 type ExtractedFacts = {
   violationDate?: Date;
   violationTime?: string;
   assessmentDate?: Date;
+  assessmentTime?: string;
   notificationDate?: Date;
   authority?: string;
   municipality?: string;
   reportNumber?: string;
+  registryNumber?: string;
   amount?: string;
   reducedAmount?: string;
   plate?: string;
   article?: string;
   paragraph?: string;
   place?: string;
+  speedDetected?: number;
+  speedLimit?: number;
+  speedExcess?: number;
+  licensePoints?: number;
+  minimumAmount?: string;
+  administrativeFees?: string;
+  deviceName?: string;
+  approvalDecree?: string;
+  calibrationCheck?: string;
   eventDescription?: string;
   eventDescriptionConfidence?: FieldConfidence;
   violationType: ViolationClassification;
@@ -69,9 +90,28 @@ export function analyzeFineText(
     warnings?: string[];
   },
 ): ScreeningReport {
-  const normalized = normalize(text);
-  const facts = extractFacts(text, normalized);
-  const context = { text, normalized, facts };
+  const pipeline = buildDocumentPagePipeline(text);
+  const analysisText = [
+    pipeline.mainVerbaleText,
+    pipeline.paymentText,
+    pipeline.warningsText,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const normalized = normalize(analysisText);
+  const facts = extractFacts(
+    pipeline.mainVerbaleText || analysisText,
+    normalized,
+    {
+      paymentText: pipeline.paymentText,
+      warningsText: pipeline.warningsText,
+    },
+  );
+  const validationWarnings = [
+    ...pipeline.validationWarnings,
+    ...validateExtractedFacts(facts),
+  ];
+  const context = { text: analysisText, normalized, facts };
   const reasons = rules
     .map((rule) => rule(context))
     .filter((result): result is RuleResult => Boolean(result));
@@ -86,13 +126,16 @@ export function analyzeFineText(
   ]);
   const outcome = getOutcome(score, confidence);
   const identifiedData = buildIdentifiedData(facts);
-  const eventSummary = facts.eventDescription || buildFallbackEventSummary(facts);
+  const eventSummary = buildEventSummary(facts);
   const extractedData = buildExtractedData(
     identifiedData,
     eventSummary,
     facts,
     options.method,
   );
+  const extractionLog = buildExtractionLog(extractedData);
+  const consistencyChecks = buildConsistencyChecks(facts);
+  const normalizedData = buildNormalizedData(facts);
   const legalRule: ScreeningReport["legalRule"] = {
     article: facts.article
       ? `Art. ${facts.article} Codice della Strada`
@@ -128,6 +171,10 @@ export function analyzeFineText(
     },
     identifiedData,
     extractedData,
+    normalizedData,
+    extractionDebug: buildExtractionDebug(pipeline, validationWarnings),
+    extractionLog,
+    consistencyChecks,
     violatedRule: {
       ...legalRule,
       classification: facts.violationType,
@@ -145,9 +192,7 @@ export function analyzeFineText(
     ),
     extractedFacts: formatFacts(identifiedData),
     reasons,
-    potentialIssues: reasons.map(
-      (item) => `${item.title}: ${item.evidence}`,
-    ),
+    potentialIssues: buildPotentialIssues(facts, reasons),
     criticalities,
     deadlines: buildDeadlines(facts.notificationDate),
     appealDeadlines: {
@@ -195,15 +240,27 @@ export function analyzeFineText(
 function extractFacts(
   text: string,
   normalized: string,
+  context: {
+    paymentText?: string;
+    warningsText?: string;
+  } = {},
 ): ExtractedFacts {
-  const violationDate = findContextDate(
-    text,
-    /(data\s+(?:della\s+)?(?:infrazione|violazione|accertamento)|(?:infrazione|violazione|accertamento|commessa|avvenuta)\s+(?:il|in\s+data))/i,
-  );
-  const assessmentDate = findContextDate(
-    text,
-    /(data\s+(?:dell['’]\s*)?accertamento|accertat[oa]\s+(?:il|in\s+data))/i,
-  );
+  const paymentText = context.paymentText ?? "";
+  const assessmentMoment = findAssessmentMoment(text);
+  const violationMoment = findViolationMoment(text);
+  const violationDate =
+    violationMoment.date ??
+    findContextDate(
+      text,
+      /(data\s+(?:della\s+)?(?:infrazione|violazione)|(?:infrazione|violazione|commessa|avvenuta)\s+(?:il|in\s+data))/i,
+    );
+  const assessmentDate =
+    assessmentMoment.date ??
+    findAssessmentDate(text) ??
+    findContextDate(
+      text,
+      /(data\s+(?:dell['’]\s*)?accertamento|accertat[oa]\s+(?:il|in\s+data))/i,
+    );
   const notificationDate = findContextDate(
     text,
     /(data\s+(?:della\s+)?notifica|notificat[oa]\s+(?:il|in\s+data)|spedizione\s+(?:il|in\s+data)|consegnat[oa]\s+(?:il|in\s+data))/i,
@@ -212,68 +269,89 @@ function extractFacts(
     .toUpperCase()
     .match(/\b[A-Z]{2}\s?\d{3}\s?[A-Z]{2}\b/)?.[0]
     ?.replace(/\s/g, "");
+  const ordinaryAmount = matchAmount(
+    text,
+    /dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno[\s\S]{0,260}?totale\s+di\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
+  ) ?? findPaymentAmount(paymentText, "standard");
   const labelledAmount = matchAmount(
     text,
     /(?:sanzione|importo|somma\s+di|pagamento)[^\d€]{0,25}(?:€\s*)?(\d{1,5}(?:[.,]\d{2})?)/i,
   );
-  const amount = labelledAmount ?? matchAmount(
+  const amount = rejectInvalidAmount(
+    ordinaryAmount ?? labelledAmount ?? matchAmount(
     text,
     /€\s*(\d{1,5}(?:[.,]\d{2})?)/i,
+    ),
   );
   const reducedAmount =
-    matchAmount(
+    rejectInvalidAmount(matchAmount(
       text,
-      /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%|misura\s+ridotta)[^\d€]{0,50}(?:€\s*)?(\d{1,5}(?:[.,]\d{2})?)/i,
-    ) ??
-    matchAmount(
+      /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%|misura\s+ridotta)[\s\S]{0,220}?totale\s+di\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
+    )) ??
+    findPaymentAmount(paymentText, "reduced") ??
+    rejectInvalidAmount(matchAmount(
       text,
       /(?:€\s*)?(\d{1,5}(?:[.,]\d{2})?)[^\n]{0,45}(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%)/i,
-    );
-  const articleMatch = text.match(
-    /(?:art(?:icolo)?\.?\s*)(\d{1,3}(?:[-\s]?(?:bis|ter|quater))?)/i,
-  );
-  const articleLine = articleMatch?.[1]
-    ? text.match(
-        new RegExp(
-          `art(?:icolo)?\\.?\\s*${escapeRegExp(articleMatch[1])}\\b[^\\n]{0,100}`,
-          "i",
-        ),
-      )?.[0]
-    : undefined;
-  const paragraph = articleLine?.match(
-    /(?:comma|co\.?)\s*([0-9]+(?:[-\s]?(?:bis|ter|quater))?)/i,
-  )?.[1];
+    ));
+  const articleDetails = extractContestedArticle(text);
   const labelledPlace = text.match(
     /luogo(?:\s+della\s+violazione)?\s*[:\-]?\s*[^\n,;]{3,100}/i,
   )?.[0];
-  const place = cleanPlace(
+  const narrativePlace = extractNarrativePlace(text);
+  const place = narrativePlace ?? cleanPlace(
     labelledPlace ??
       text.match(
         /(?:in\s+localit[aà]|via|viale|piazza|corso|strada|localit[aà]|km|chilometro)\s*[:\-]?\s*[^\n,;]{3,100}/i,
       )?.[0],
   );
-  const municipality =
-    cleanExtractedValue(
-      text.match(/(?:comune\s+di|citt[aà]\s+di)\s+([^\n,;]{2,60})/i)?.[1],
-    ) ??
-    cleanExtractedValue(
-      text.match(/polizia\s+(?:locale|municipale)\s+di\s+([^\n,;]{2,60})/i)?.[1],
-    );
-  const authority = cleanExtractedValue(
-    text.match(
-      /(?:corpo\s+di\s+)?(?:polizia\s+locale|polizia\s+municipale|polizia\s+stradale|carabinieri|guardia\s+di\s+finanza|comune\s+di)[^\n,;]{0,80}/i,
-    )?.[0],
-  );
+  const rawMunicipality =
+    extractMunicipality(text);
+  const municipality = rawMunicipality ? toTitleCase(rawMunicipality) : undefined;
+  const authority = extractAuthority(text, municipality);
   const reportNumber = cleanExtractedValue(
-    text.match(
-      /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9./-]{2,30})/i,
-    )?.[1],
+    text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9./-]{2,30})/i)?.[1] ??
+      text.match(
+        /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9./-]{2,30})/i,
+      )?.[1],
   );
-  const violationTime = findContextTime(
+  const registryNumber = cleanExtractedValue(
+    text.match(/N\.?\s*Registro\s+([A-Z0-9./-]{3,40})/i)?.[1],
+  );
+  const violationTime =
+    violationMoment.time ??
+    findTimeNearDate(text, violationDate) ??
+    findContextTime(text, /(infrazione|violazione|commessa|avvenuta)/i);
+  const assessmentTime = assessmentMoment.time;
+  const speedDetected = matchNumber(
     text,
-    /(infrazione|violazione|accertamento|commessa|avvenuta|ore)/i,
+    /circolava\s+alla\s+velocit[aà]\s+di\s+Km\/h\s*(\d{1,3})/i,
   );
-  const classification = classifyViolation(text, articleMatch?.[1]);
+  const speedLimit = matchNumber(
+    text,
+    /limite\s+di\s+velocit[aà]\s+era\s+di\s+Km\/h\s*(\d{1,3})/i,
+  );
+  const speedExcess = matchNumber(
+    text,
+    /eccedeva\s+precisamente\s+di\s+Km\/h\s*(\d{1,3})/i,
+  );
+  const licensePoints = matchNumber(
+    text,
+    /decurtazione\s+di\s+n\.?\s*(\d{1,2})\s+punti/i,
+  );
+  const minimumAmount = matchAmount(
+    text,
+    /sanzione\s+in\s+misura\s+ridotta\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
+  );
+  const administrativeFees = matchAmount(
+    text,
+    /pi[uù]\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)\s+per\s+le\s+spese\s+amministrative/i,
+  );
+  const deviceName = cleanExtractedValue(
+    text.match(/denominato\s+([A-Z0-9_/-]+(?:\s+[A-Z0-9_/-]+)*)(?:,|\s+matr\.|\s+approvato)/i)?.[1],
+  );
+  const approvalDecree = extractApprovalDecree(text);
+  const calibrationCheck = extractCalibrationCheck(text);
+  const classification = classifyViolation(text, articleDetails.article);
   const violationType = classification.value;
   const deviceType = getDeviceType(normalized, violationType);
   const eventDescription = extractEventDescription(text);
@@ -290,16 +368,27 @@ function extractFacts(
     ...(violationDate && { violationDate: "Alta" }),
     ...(violationTime && { violationTime: "Alta" }),
     ...(assessmentDate && { assessmentDate: "Alta" }),
+    ...(assessmentTime && { assessmentTime: "Alta" }),
     ...(notificationDate && { notificationDate: "Alta" }),
     ...(authority && { authority: "Media" }),
     ...(municipality && { municipality: "Alta" }),
     ...(reportNumber && { reportNumber: "Alta" }),
+    ...(registryNumber && { registryNumber: "Alta" }),
     ...(plate && { plate: "Alta" }),
-    ...(amount && { amount: labelledAmount ? "Alta" : "Media" }),
-    ...(reducedAmount && { reducedAmount: "Media" }),
-    ...(articleMatch?.[1] && { article: legalContext ? "Alta" : "Media" }),
-    ...(paragraph && { paragraph: legalContext ? "Alta" : "Media" }),
-    ...(place && { place: labelledPlace ? "Alta" : "Media" }),
+    ...(amount && { amount: ordinaryAmount || labelledAmount ? "Alta" : "Media" }),
+    ...(reducedAmount && { reducedAmount: "Alta" }),
+    ...(articleDetails.article && { article: legalContext ? "Alta" : "Media" }),
+    ...(articleDetails.paragraph && { paragraph: legalContext ? "Alta" : "Media" }),
+    ...(place && { place: narrativePlace || labelledPlace ? "Alta" : "Media" }),
+    ...(speedDetected !== undefined && { speedDetected: "Alta" }),
+    ...(speedLimit !== undefined && { speedLimit: "Alta" }),
+    ...(speedExcess !== undefined && { speedExcess: "Alta" }),
+    ...(licensePoints !== undefined && { licensePoints: "Alta" }),
+    ...(minimumAmount && { minimumAmount: "Alta" }),
+    ...(administrativeFees && { administrativeFees: "Alta" }),
+    ...(deviceName && { deviceName: "Alta" }),
+    ...(approvalDecree && { approvalDecree: "Alta" }),
+    ...(calibrationCheck && { calibrationCheck: "Alta" }),
     ...(violationType !== VIOLATION_NOT_CLASSIFIED && {
       violationType: classification.confidence,
     }),
@@ -309,16 +398,27 @@ function extractFacts(
     violationDate,
     violationTime,
     assessmentDate,
+    assessmentTime,
     notificationDate,
     authority,
     municipality,
     reportNumber,
+    registryNumber,
     amount,
     reducedAmount,
     plate,
-    article: articleMatch?.[1],
-    paragraph,
+    article: articleDetails.article,
+    paragraph: articleDetails.paragraph,
     place,
+    speedDetected,
+    speedLimit,
+    speedExcess,
+    licensePoints,
+    minimumAmount,
+    administrativeFees,
+    deviceName,
+    approvalDecree,
+    calibrationCheck,
     eventDescription: eventDescription?.value,
     eventDescriptionConfidence: eventDescription?.confidence,
     violationType,
@@ -350,7 +450,7 @@ function classifyViolation(
       value,
     )
   ) {
-    return { value: "autovelox / eccesso di velocità", confidence: "Alta" };
+    return { value: "Autovelox / Eccesso di velocità", confidence: "Alta" };
   }
   if (
     /divieto\s+di\s+sosta|sosta\s+(?:vietata|irregolare)|parcheggi|sostava[^\n]{0,50}(?:vietat|non\s+consentit)/.test(
@@ -400,9 +500,11 @@ function classifyViolation(
     string,
     Exclude<ViolationClassification, typeof VIOLATION_NOT_CLASSIFIED>
   > = {
-    "7": "altra violazione",
+    "7": "ZTL / accesso area vietata",
     "80": "mancata revisione",
-    "142": "autovelox / eccesso di velocità",
+    "126-bis": "mancata comunicazione dati conducente",
+    "126bis": "mancata comunicazione dati conducente",
+    "142": "Autovelox / Eccesso di velocità",
     "146": "semaforo rosso",
     "158": "divieto di sosta",
     "173": "uso del telefono alla guida",
@@ -427,7 +529,7 @@ function getDeviceType(
   if (/\btutor\b|velocit[aà]\s+media/i.test(normalized)) return "Tutor";
   if (
     /\bautovelox\b|rilevator[ei]\s+di\s+velocit/i.test(normalized) ||
-    violationType === "autovelox / eccesso di velocità"
+    violationType === "Autovelox / Eccesso di velocità"
   ) {
     return "Autovelox";
   }
@@ -451,7 +553,11 @@ function notificationOverNinetyDays(context: RuleContext): RuleResult | null {
 
 function speedDeviceWithoutApproval(context: RuleContext): RuleResult | null {
   if (!["Autovelox", "Tutor"].includes(context.facts.deviceType ?? "")) return null;
-  if (/omologaz|approvaz|decreto\s+(?:ministeriale|dirigenziale)/i.test(context.normalized)) {
+  if (
+    /omologaz|approvaz|approvat|decreto\s+(?:ministeriale|ministero|dirigenziale)|taratura/i.test(
+      context.normalized,
+    )
+  ) {
     return null;
   }
   return reason(
@@ -565,12 +671,14 @@ function buildIdentifiedData(facts: ExtractedFacts): IdentifiedFineData {
     authority: facts.authority || NOT_DETECTED,
     municipality: facts.municipality || NOT_DETECTED,
     reportNumber: facts.reportNumber || NOT_DETECTED,
+    registryNumber: facts.registryNumber || NOT_DETECTED,
     plate: facts.plate || NOT_DETECTED,
     violationDate: facts.violationDate ? formatDate(facts.violationDate) : NOT_DETECTED,
     violationTime: facts.violationTime || NOT_DETECTED,
     assessmentDate: facts.assessmentDate
       ? formatDate(facts.assessmentDate)
       : NOT_DETECTED,
+    assessmentTime: facts.assessmentTime || NOT_DETECTED,
     notificationDate: facts.notificationDate
       ? formatDate(facts.notificationDate)
       : NOT_DETECTED,
@@ -582,8 +690,39 @@ function buildIdentifiedData(facts: ExtractedFacts): IdentifiedFineData {
       ? `Art. ${facts.article} Codice della Strada`
       : ARTICLE_NOT_IDENTIFIED,
     paragraph: facts.paragraph ? `Comma ${facts.paragraph}` : NOT_DETECTED,
+    speedDetected:
+      facts.speedDetected !== undefined ? `${facts.speedDetected} km/h` : NOT_DETECTED,
+    speedLimit:
+      facts.speedLimit !== undefined ? `${facts.speedLimit} km/h` : NOT_DETECTED,
+    speedExcess:
+      facts.speedExcess !== undefined ? `${facts.speedExcess} km/h` : NOT_DETECTED,
+    licensePoints:
+      facts.licensePoints !== undefined ? `${facts.licensePoints}` : NOT_DETECTED,
+    minimumAmount: facts.minimumAmount ? `€${facts.minimumAmount}` : NOT_DETECTED,
+    administrativeFees: facts.administrativeFees
+      ? `€${facts.administrativeFees}`
+      : NOT_DETECTED,
+    deviceName: facts.deviceName || NOT_DETECTED,
+    approvalDecree: facts.approvalDecree || NOT_DETECTED,
+    calibrationCheck: facts.calibrationCheck || NOT_DETECTED,
     violationType: facts.violationType,
     place: facts.place || NOT_DETECTED,
+  };
+}
+
+function buildNormalizedData(facts: ExtractedFacts): ScreeningReport["normalizedData"] {
+  return {
+    articleCode: facts.article || ARTICLE_NOT_IDENTIFIED,
+    paragraph: facts.paragraph || NOT_DETECTED,
+    violationTime: facts.violationTime || NOT_DETECTED,
+    detectionTime: facts.assessmentTime || NOT_DETECTED,
+    reducedAmount: facts.reducedAmount ? `€${facts.reducedAmount}` : NOT_DETECTED,
+    standardAmount: facts.amount ? `€${facts.amount}` : NOT_DETECTED,
+    speedDetected: facts.speedDetected ?? null,
+    speedLimit: facts.speedLimit ?? null,
+    speedExcess: facts.speedExcess ?? null,
+    points: facts.licensePoints ?? null,
+    classification: facts.violationType,
   };
 }
 
@@ -618,10 +757,12 @@ function buildExtractedData(
     field("authority", "Ente accertatore", data.authority),
     field("municipality", "Comune", data.municipality),
     field("reportNumber", "Numero verbale", data.reportNumber),
+    field("registryNumber", "Numero registro", data.registryNumber),
     field("plate", "Targa", data.plate),
     field("violationDate", "Data violazione", data.violationDate),
     field("violationTime", "Ora violazione", data.violationTime),
     field("assessmentDate", "Data accertamento", data.assessmentDate),
+    field("assessmentTime", "Ora accertamento", data.assessmentTime),
     field("notificationDate", "Data notifica", data.notificationDate),
     field("place", "Luogo violazione", data.place),
     field("amount", "Importo", data.amount),
@@ -632,6 +773,15 @@ function buildExtractedData(
     ),
     field("article", "Articolo CdS", data.article),
     field("paragraph", "Comma", data.paragraph),
+    field("speedDetected", "Velocità rilevata", data.speedDetected),
+    field("speedLimit", "Limite", data.speedLimit),
+    field("speedExcess", "Superamento", data.speedExcess),
+    field("licensePoints", "Punti patente", data.licensePoints),
+    field("minimumAmount", "Importo minimo edittale", data.minimumAmount),
+    field("administrativeFees", "Spese amministrative", data.administrativeFees),
+    field("deviceName", "Apparecchiatura", data.deviceName),
+    field("approvalDecree", "Decreto approvazione", data.approvalDecree),
+    field("calibrationCheck", "Taratura/verifica", data.calibrationCheck),
     field(
       "eventSummary",
       "Descrizione sintetica",
@@ -664,7 +814,7 @@ function getRuleDescription(facts: ExtractedFacts) {
   const descriptions: Record<ViolationClassification, string> = {
     "ZTL / accesso area vietata":
       "Possibile accesso o transito in una zona soggetta a limitazioni.",
-    "autovelox / eccesso di velocità":
+    "Autovelox / Eccesso di velocità":
       "Possibile superamento del limite di velocità rilevato direttamente o tramite dispositivo.",
     "divieto di sosta": "Possibile violazione delle regole di fermata o sosta.",
     "semaforo rosso":
@@ -688,6 +838,19 @@ function getRuleDescription(facts: ExtractedFacts) {
     return "Descrizione della norma non disponibile con sufficiente certezza.";
   }
   return descriptions[facts.violationType];
+}
+
+function buildEventSummary(facts: ExtractedFacts) {
+  if (
+    facts.violationType === "Autovelox / Eccesso di velocità" &&
+    facts.plate &&
+    facts.speedDetected !== undefined &&
+    facts.speedLimit !== undefined &&
+    facts.speedExcess !== undefined
+  ) {
+    return `Contestazione per eccesso di velocità: veicolo targa ${facts.plate} circolava a ${facts.speedDetected} km/h su limite ${facts.speedLimit} km/h; eccedenza verbalizzata ${facts.speedExcess} km/h dopo tolleranza.`;
+  }
+  return facts.eventDescription || buildFallbackEventSummary(facts);
 }
 
 function buildFallbackEventSummary(facts: ExtractedFacts) {
@@ -796,6 +959,102 @@ function buildPreliminaryAssessment(
     ? "almeno una segnalazione di rilevanza alta"
     : "segnalazioni di rilevanza media o bassa";
   return `Sono presenti ${relevance}. Si consiglia una verifica professionale prima di valutare un eventuale ricorso. La qualità tecnica dell’estrazione è ${confidence >= 75 ? "buona" : confidence >= 50 ? "parziale" : "limitata"}.`;
+}
+
+function buildExtractionLog(
+  extractedData: ExtractedDataField[],
+): ScreeningReport["extractionLog"] {
+  const identified = extractedData
+    .filter((field) => field.confidence !== "Non rilevato")
+    .map((field) => ({
+      field: field.key,
+      confidence: field.confidence,
+    }));
+  const missing = extractedData
+    .filter((field) => field.confidence === "Non rilevato")
+    .map((field) => ({
+      field: field.key,
+      confidence: field.confidence,
+    }));
+  const confidenceByField = Object.fromEntries(
+    extractedData.map((field) => [field.key, field.confidence]),
+  );
+
+  return { identified, missing, confidenceByField };
+}
+
+function buildConsistencyChecks(
+  facts: ExtractedFacts,
+): ScreeningReport["consistencyChecks"] {
+  const checks: ScreeningReport["consistencyChecks"] = [];
+  if (
+    facts.speedDetected !== undefined &&
+    facts.speedLimit !== undefined &&
+    facts.speedExcess !== undefined
+  ) {
+    const arithmeticExcess = facts.speedDetected - facts.speedLimit;
+    const status =
+      arithmeticExcess === facts.speedExcess ? "Coerente" : "Da verificare";
+    checks.push({
+      title: "Coerenza velocità e superamento",
+      status,
+      detail:
+        status === "Coerente"
+          ? `La velocità rilevata (${facts.speedDetected} km/h) meno il limite (${facts.speedLimit} km/h) coincide con il superamento indicato (${facts.speedExcess} km/h).`
+          : `La differenza aritmetica tra velocità rilevata (${facts.speedDetected} km/h) e limite (${facts.speedLimit} km/h) è ${arithmeticExcess} km/h, mentre il verbale indica ${facts.speedExcess} km/h. Verificare la tolleranza applicata e la velocità calcolata in verbalizzazione.`,
+    });
+  } else {
+    checks.push({
+      title: "Coerenza velocità e superamento",
+      status: "Non verificabile",
+      detail:
+        "Velocità rilevata, limite o superamento non sono stati individuati con sufficiente certezza.",
+    });
+  }
+
+  if (facts.article === "142" && facts.violationType === "Autovelox / Eccesso di velocità") {
+    checks.push({
+      title: "Coerenza norma e classificazione",
+      status: "Coerente",
+      detail:
+        "L'articolo 142 CdS è coerente con una classificazione relativa a velocità/autovelox.",
+    });
+  } else if (facts.article && facts.violationType !== VIOLATION_NOT_CLASSIFIED) {
+    checks.push({
+      title: "Coerenza norma e classificazione",
+      status: "Da verificare",
+      detail:
+        "La norma e la classificazione sono state individuate, ma richiedono verifica sul testo integrale del verbale.",
+    });
+  }
+
+  return checks;
+}
+
+function buildPotentialIssues(facts: ExtractedFacts, reasons: RuleResult[]) {
+  const issues = reasons.map((item) => `${item.title}: ${item.evidence}`);
+  if (facts.deviceType === "Autovelox" || facts.article === "142") {
+    if (facts.deviceName || facts.approvalDecree || facts.calibrationCheck) {
+      issues.push(
+        `Il verbale indica apparecchiatura ${facts.deviceName ?? "non rilevata"}, richiama decreto di approvazione e controlli periodici. Può essere utile verificare la documentazione tecnica agli atti, la segnalazione preventiva e i fotogrammi.`,
+      );
+    }
+    issues.push(
+      "Verifica segnalazione preventiva del dispositivo",
+      "Verifica documentazione fotografica",
+      "Verifica taratura e verifiche periodiche",
+      "Verifica corretta notifica",
+      "Verifica documentazione disponibile agli atti",
+    );
+  }
+  if (facts.deviceType === "ZTL") {
+    issues.push(
+      "Verifica autorizzazione al transito e orari della ZTL",
+      "Verifica documentazione fotografica del varco",
+      "Verifica segnaletica e informazioni disponibili sul percorso",
+    );
+  }
+  return unique(issues);
 }
 
 function buildSuggestedPath(): ScreeningReport["suggestedPath"] {
@@ -946,18 +1205,226 @@ function formatFacts(data: IdentifiedFineData) {
     `Ente accertatore: ${data.authority}`,
     `Comune: ${data.municipality}`,
     `Numero verbale: ${data.reportNumber}`,
+    `Numero registro: ${data.registryNumber}`,
     `Targa: ${data.plate}`,
     `Data violazione: ${data.violationDate}`,
     `Ora violazione: ${data.violationTime}`,
     `Data accertamento: ${data.assessmentDate}`,
+    `Ora accertamento: ${data.assessmentTime}`,
     `Data notifica: ${data.notificationDate}`,
     `Importo sanzione: ${data.amount}`,
     `Importo ridotto entro 5 giorni: ${data.reducedAmount}`,
+    `Importo minimo edittale: ${data.minimumAmount}`,
+    `Spese amministrative: ${data.administrativeFees}`,
     `Norma: ${data.article}`,
     `Comma: ${data.paragraph}`,
+    `Velocità rilevata: ${data.speedDetected}`,
+    `Limite: ${data.speedLimit}`,
+    `Superamento: ${data.speedExcess}`,
+    `Punti patente: ${data.licensePoints}`,
+    `Apparecchiatura: ${data.deviceName}`,
+    `Decreto approvazione: ${data.approvalDecree}`,
+    `Taratura/verifica: ${data.calibrationCheck}`,
     `Tipo violazione: ${data.violationType}`,
     `Luogo: ${data.place}`,
   ];
+}
+
+function buildDocumentPagePipeline(text: string): DocumentPagePipeline {
+  const pages = segmentDocumentPages(text).map((page) => {
+    const cleanedText = removeNoiseLines(page.text);
+    const classification = classifyPage(cleanedText);
+    return {
+      pageNumber: page.pageNumber,
+      text: cleanedText,
+      classification: classification.classification,
+      score: classification.score,
+      textPreview: cleanedText.slice(0, 500),
+    };
+  });
+  const mainPage =
+    pages
+      .filter((page) => page.classification === "MAIN_VERBALE")
+      .sort((a, b) => b.score - a.score)[0] ??
+    pages
+      .filter((page) => /VERBALE DI CONTESTAZIONE DI VIOLAZIONE DEL CODICE DELLA STRADA/i.test(page.text))
+      .sort((a, b) => b.score - a.score)[0] ??
+    null;
+  const paymentText = pages
+    .filter((page) => page.classification === "PAYMENT_NOTICE")
+    .map((page) => page.text)
+    .join("\n\n");
+  const warningsText = pages
+    .filter((page) => page.classification === "WARNINGS")
+    .map((page) => page.text)
+    .join("\n\n");
+  const validationWarnings: string[] = [];
+  if (!mainPage) {
+    validationWarnings.push("MAIN_VERBALE non individuata: estrazione eseguita sul testo completo pulito.");
+  }
+
+  return {
+    pages: pages.map(({ pageNumber, classification, score, textPreview }) => ({
+      pageNumber,
+      classification,
+      score,
+      textPreview,
+    })),
+    mainVerbaleText: mainPage?.text ?? removeNoiseLines(text),
+    paymentText,
+    warningsText,
+    selectedMainVerbalePage: mainPage?.pageNumber ?? null,
+    validationWarnings,
+  };
+}
+
+function segmentDocumentPages(text: string) {
+  const markerPattern = /^--\s*(\d+)\s+of\s+\d+\s*--$/gim;
+  const markers = [...text.matchAll(markerPattern)];
+  if (markers.length === 0) {
+    return [{ pageNumber: 1, text }];
+  }
+
+  return markers.map((marker, index) => {
+    const start = marker.index ?? 0;
+    const end = markers[index + 1]?.index ?? text.length;
+    return {
+      pageNumber: Number(marker[1]),
+      text: text.slice(start, end),
+    };
+  });
+}
+
+function classifyPage(text: string): Pick<
+  ClassifiedDocumentPage,
+  "classification" | "score"
+> {
+  const normalizedPage = normalize(text);
+  const scores = {
+    MAIN_VERBALE: scoreMatches(normalizedPage, [
+      /verbale di contestazione di violazione del codice della strada/,
+      /n registro/,
+      /n verbale/,
+      /ha violato il seguente articolo/,
+      /\bart\b/,
+      /modalita di pagamento/,
+    ]),
+    PAYMENT_NOTICE: scoreMatches(normalizedPage, [
+      /avviso di pagamento/,
+      /pagopa/,
+      /codice avviso/,
+      /cbill/,
+      /\beuro\b/,
+      /entro 5 giorni/,
+      /dal 6 al 60 giorno/,
+    ]),
+    DRIVER_COMMUNICATION_FORM: scoreMatches(normalizedPage, [
+      /modulo di comunicazione dati del conducente/,
+      /ipotesi a/,
+      /ipotesi b/,
+      /patente di guida/,
+    ]),
+    WARNINGS: scoreMatches(normalizedPage, [
+      /\bavvertenze\b/,
+      /\bricorso\b/,
+      /giudice di pace/,
+      /prefetto/,
+    ]),
+    NOISE_OR_COVER: scoreMatches(normalizedPage, [
+      /1234567890qwerty/,
+      /qwertyuiopasdfghjklzxcv/,
+    ]),
+  };
+  if (scores.MAIN_VERBALE >= 3) {
+    return { classification: "MAIN_VERBALE", score: scores.MAIN_VERBALE };
+  }
+  if (scores.DRIVER_COMMUNICATION_FORM >= 3) {
+    return {
+      classification: "DRIVER_COMMUNICATION_FORM",
+      score: scores.DRIVER_COMMUNICATION_FORM,
+    };
+  }
+  if (scores.WARNINGS >= 3) {
+    return { classification: "WARNINGS", score: scores.WARNINGS };
+  }
+  if (scores.PAYMENT_NOTICE >= 2) {
+    return { classification: "PAYMENT_NOTICE", score: scores.PAYMENT_NOTICE };
+  }
+  if (scores.NOISE_OR_COVER > 0) {
+    return {
+      classification: "NOISE_OR_COVER",
+      score: scores.NOISE_OR_COVER,
+    };
+  }
+  const [classification, score] = Object.entries(scores).sort(
+    ([, firstScore], [, secondScore]) => secondScore - firstScore,
+  )[0] as [ClassifiedDocumentPage["classification"], number];
+
+  return {
+    classification: score > 0 ? classification : "NOISE_OR_COVER",
+    score,
+  };
+}
+
+function scoreMatches(text: string, patterns: RegExp[]) {
+  return patterns.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function buildExtractionDebug(
+  pipeline: DocumentPagePipeline,
+  validationWarnings: string[],
+): ScreeningReport["extractionDebug"] {
+  if (process.env.NODE_ENV === "production") {
+    return {
+      pages: [],
+      selectedMainVerbalePage: null,
+      validationWarnings: [],
+    };
+  }
+
+  return {
+    pages: pipeline.pages,
+    selectedMainVerbalePage: pipeline.selectedMainVerbalePage,
+    validationWarnings,
+  };
+}
+
+function removeNoiseLines(text: string) {
+  return text
+    .split(/\n/)
+    .filter((line) => {
+      const compact = line.replace(/\s+/g, "");
+      if (!compact) return true;
+      return !/qwertyuiopasdfghjklzxcv/i.test(line);
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractContestedArticle(text: string) {
+  const targetedLine =
+    text.match(
+      /ha\s+violato\s+il\s+seguente\s+articolo:\s*(Art\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?[\s\S]{0,180})/i,
+    )?.[1] ??
+    text.match(
+      /\bArt\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?\s+comma\s+[0-9]+(?:[-\s]?(?:bis|ter|quater))?[^\n]{0,160}/i,
+    )?.[0] ??
+    text
+      .split(/\n/)
+      .find((line) => /\bArt(?:icolo)?\.?\s*\d{1,3}/i.test(line) && /comma|Codice\s+della\s+Strada|C\.?d\.?S\.?/i.test(line));
+  const fallbackLine = text.match(
+    /\bArt(?:icolo)?\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?[^\n]{0,120}(?:Codice\s+della\s+Strada|C\.?d\.?S\.?)/i,
+  )?.[0];
+  const line = targetedLine ?? fallbackLine;
+  const article = line
+    ?.match(/Art(?:icolo)?\.?\s*(\d{1,3}(?:[-\s]?(?:bis|ter|quater))?)/i)?.[1]
+    ?.replace(/\s+/g, "-");
+  const paragraph = line
+    ?.match(/(?:comma|co\.?)\s*([0-9]+(?:[-\s]?(?:bis|ter|quater))?)/i)?.[1]
+    ?.replace(/\s+/g, "-");
+
+  return { article, paragraph };
 }
 
 function findContextDate(text: string, contextPattern: RegExp) {
@@ -969,6 +1436,35 @@ function findContextDate(text: string, contextPattern: RegExp) {
   return undefined;
 }
 
+function findAssessmentMoment(text: string) {
+  const match = text.match(
+    /\bIn\s+data\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s+alle\s+ore\s+([0-2]?\d[:.][0-5]\d)[\s\S]{0,220}?\bha\s+accertato\b/i,
+  );
+  return {
+    date: match?.[1] ? parseItalianDate(match[1]) : undefined,
+    time: match?.[2]?.replace(".", ":"),
+  };
+}
+
+function findViolationMoment(text: string) {
+  const match =
+    text.match(
+      /che\s+in\s+data\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s+alle\s+ore\s+([0-2]?\d[:.][0-5]\d)/i,
+    ) ??
+    [...text.matchAll(/in\s+data\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s+alle\s+ore\s+([0-2]?\d[:.][0-5]\d)/gi)][1];
+  return {
+    date: match?.[1] ? parseItalianDate(match[1]) : undefined,
+    time: match?.[2]?.replace(".", ":"),
+  };
+}
+
+function findAssessmentDate(text: string) {
+  const date = text.match(
+    /\bIn\s+data\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})[\s\S]{0,180}?\bha\s+accertato\b/i,
+  )?.[1];
+  return date ? parseItalianDate(date) : undefined;
+}
+
 function findContextTime(text: string, contextPattern: RegExp) {
   for (const line of text.split(/\n/)) {
     if (!contextPattern.test(line)) continue;
@@ -976,6 +1472,141 @@ function findContextTime(text: string, contextPattern: RegExp) {
     if (time) return time.replace(/^ore\s*/i, "");
   }
   return undefined;
+}
+
+function findTimeNearDate(text: string, date?: Date) {
+  if (!date) return undefined;
+  const dateText = [
+    String(date.getDate()).padStart(2, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    date.getFullYear(),
+  ].join("/");
+  const compactDateText = dateText.replace(/^0(\d)\//, "$1/").replace(/\/0(\d)\//, "/$1/");
+  const escapedDates = [dateText, compactDateText]
+    .map(escapeRegExp)
+    .join("|");
+  return text
+    .match(new RegExp(`(?:${escapedDates})[^\\n]{0,80}?(?:alle\\s+ore|ore)\\s*([0-2]?\\d[:.][0-5]\\d)`, "i"))?.[1]
+    ?.replace(".", ":");
+}
+
+function matchNumber(text: string, pattern: RegExp) {
+  const value = text.match(pattern)?.[1];
+  return value ? Number(value) : undefined;
+}
+
+function findPaymentAmount(text: string, type: "reduced" | "standard") {
+  if (!text) return undefined;
+  const pattern =
+    type === "reduced"
+      ? /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%)[\s\S]{0,260}?(?:totale\s+di\s+Euro|Euro)\s+(\d{1,5}(?:[.,]\d{2})?)/i
+      : /dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno[\s\S]{0,260}?(?:totale\s+di\s+Euro|Euro)\s+(\d{1,5}(?:[.,]\d{2})?)/i;
+  return rejectInvalidAmount(matchAmount(text, pattern));
+}
+
+function rejectInvalidAmount(amount?: string) {
+  if (!amount) return undefined;
+  const numeric = Number(amount.replace(".", "").replace(",", "."));
+  if (!Number.isFinite(numeric)) return undefined;
+  if (numeric <= 0 || numeric > 10_000) return undefined;
+  if (/^(?:00192|3019|9250|0008)/.test(amount.replace(/[,.]/g, ""))) {
+    return undefined;
+  }
+  return amount;
+}
+
+function extractMunicipality(text: string) {
+  return (
+    cleanExtractedValue(
+      text.match(/^COMUNE\s+DI\s+([A-ZÀ-Ýa-zà-ÿ' -]{2,60})$/im)?.[1],
+    ) ??
+    cleanExtractedValue(
+      text.match(/nel\s+Comune\s+di\s+([A-ZÀ-Ýa-zà-ÿ' -]{2,60}),/i)?.[1],
+    ) ??
+    cleanExtractedValue(
+      text.match(/del\s+comune\s+di\s+([A-ZÀ-Ýa-zà-ÿ' -]{2,60})[,.\n]/i)?.[1],
+    ) ??
+    cleanExtractedValue(
+      text.match(/polizia\s+(?:locale|municipale)\s+di\s+([^\n,;–-]{2,60})/i)?.[1],
+    ) ??
+    cleanExtractedValue(
+      text.match(/(?:comune\s+di|citt[aà]\s+di)\s+([^\n,;–-]{2,60})/i)?.[1],
+    )
+  );
+}
+
+function validateExtractedFacts(facts: ExtractedFacts) {
+  const warnings: string[] = [];
+  if (
+    facts.violationType === "Autovelox / Eccesso di velocità" &&
+    facts.article &&
+    facts.article !== "142"
+  ) {
+    warnings.push("Classificazione autovelox incoerente con articolo diverso da 142.");
+  }
+  if (facts.place && /riportate nel|il conducente|ha violato/i.test(facts.place)) {
+    warnings.push("Luogo estratto contiene parole generiche: verificare riestrazione.");
+  }
+  if (facts.amount && !rejectInvalidAmount(facts.amount)) {
+    warnings.push("Importo sospetto: possibile codice pagoPA o codice fiscale.");
+  }
+  return warnings;
+}
+
+function extractApprovalDecree(text: string) {
+  const match = text.match(
+    /approvato\s+con\s+Decreto\s+Ministero\s+delle\s+Infrastrutture\s+e\s+dei\s+Trasporti\s+con\s+prot\.\s+n\.?\s*(\d+)\s+del\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  );
+  if (!match) return undefined;
+  return `Ministero Infrastrutture e Trasporti prot. n. ${match[1]} del ${match[2]}`;
+}
+
+function extractCalibrationCheck(text: string) {
+  if (
+    /controllo\s+di\s+taratura\s+metrologica[\s\S]{0,180}verifica\s+di\s+funzionalit[aà][\s\S]{0,80}cadenza\s+annuale/i.test(
+      text,
+    )
+  ) {
+    return "Presente riferimento a controllo metrologico e verifica annuale";
+  }
+  if (/taratura|verifica\s+di\s+funzionalit[aà]/i.test(text)) {
+    return "Presente riferimento a taratura o verifica tecnica";
+  }
+  return undefined;
+}
+
+function extractAuthority(text: string, municipality?: string) {
+  if (/comune\s+di\s+rovigo[\s\S]{0,80}polizia\s+locale/i.test(text)) {
+    return "Comune di Rovigo - Polizia Locale";
+  }
+  const police = cleanExtractedValue(
+    text.match(
+      /(?:corpo\s+di\s+)?(?:polizia\s+locale|polizia\s+municipale|polizia\s+stradale|carabinieri|guardia\s+di\s+finanza)[^\n,;]{0,80}/i,
+    )?.[0],
+  );
+  const municipalityAuthority = cleanExtractedValue(
+    text.match(/comune\s+di\s+([^\n,;]{2,60})/i)?.[0],
+  );
+  if (municipalityAuthority && /polizia\s+locale/i.test(text)) {
+    return `${toTitleCase(municipalityAuthority)} - Polizia Locale`;
+  }
+  if (police && municipality && !new RegExp(municipality, "i").test(police)) {
+    return `${toTitleCase(municipality)} - ${toTitleCase(police)}`;
+  }
+  return police ? toTitleCase(police) : municipalityAuthority ? toTitleCase(municipalityAuthority) : undefined;
+}
+
+function extractNarrativePlace(text: string) {
+  const match = text.match(
+    /alle\s+ore\s+[0-2]?\d[:.][0-5]\d\s+in\s+(.{8,180}?)\s+del\s+comune\s+di\s+([A-ZÀ-Ýa-zà-ÿ' -]{2,60})[,.\n]/i,
+  );
+  if (!match) return undefined;
+  const street = match[1]
+    .replace(/\s+/g, " ")
+    .replace(/\bcivico\/km\.\s*/i, "")
+    .replace(/\bkm\.\s*/i, "km ")
+    .trim();
+  return `${toTitleCase(street)}, ${toTitleCase(match[2].trim())}`;
 }
 
 function parseItalianDate(value: string) {
@@ -1015,6 +1646,16 @@ function cleanExtractedValue(value?: string) {
     .trim()
     .replace(/[.,;:]+$/, "");
   return cleaned || undefined;
+}
+
+function toTitleCase(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\b([a-zà-ÿ])/g, (letter) => letter.toUpperCase())
+    .replace(/\b(?:CdS|Cds)\b/g, "CdS")
+    .replace(/\bSr(\d+)/g, "SR$1")
+    .replace(/\bKm\b/g, "km")
+    .replace(/\bG\.\b/g, "G.");
 }
 
 function cleanPlace(value?: string) {

@@ -257,6 +257,8 @@ function syncIdentifiedData(
     authority: value("authority") ?? report.identifiedData.authority,
     municipality: value("municipality") ?? report.identifiedData.municipality,
     reportNumber: value("reportNumber") ?? report.identifiedData.reportNumber,
+    registryNumber:
+      value("registryNumber") ?? report.identifiedData.registryNumber,
     plate: value("plate") ?? report.identifiedData.plate,
     violationDate:
       value("violationDate") ?? report.identifiedData.violationDate,
@@ -264,14 +266,32 @@ function syncIdentifiedData(
       value("violationTime") ?? report.identifiedData.violationTime,
     assessmentDate:
       value("assessmentDate") ?? report.identifiedData.assessmentDate,
+    assessmentTime:
+      value("assessmentTime") ?? report.identifiedData.assessmentTime,
     notificationDate:
       value("notificationDate") ?? report.identifiedData.notificationDate,
-    place: value("place") ?? report.identifiedData.place,
     amount: value("amount") ?? report.identifiedData.amount,
     reducedAmount:
       value("reducedAmount") ?? report.identifiedData.reducedAmount,
     article: value("article") ?? report.identifiedData.article,
     paragraph: value("paragraph") ?? report.identifiedData.paragraph,
+    speedDetected:
+      value("speedDetected") ?? report.identifiedData.speedDetected,
+    speedLimit: value("speedLimit") ?? report.identifiedData.speedLimit,
+    speedExcess: value("speedExcess") ?? report.identifiedData.speedExcess,
+    licensePoints:
+      value("licensePoints") ?? report.identifiedData.licensePoints,
+    minimumAmount:
+      value("minimumAmount") ?? report.identifiedData.minimumAmount,
+    administrativeFees:
+      value("administrativeFees") ?? report.identifiedData.administrativeFees,
+    deviceName: value("deviceName") ?? report.identifiedData.deviceName,
+    approvalDecree:
+      value("approvalDecree") ?? report.identifiedData.approvalDecree,
+    calibrationCheck:
+      value("calibrationCheck") ?? report.identifiedData.calibrationCheck,
+    violationType: report.identifiedData.violationType,
+    place: value("place") ?? report.identifiedData.place,
   };
 }
 
@@ -407,22 +427,33 @@ const extractedKeys = [
   "authority",
   "municipality",
   "reportNumber",
+  "registryNumber",
   "plate",
   "violationDate",
   "violationTime",
   "assessmentDate",
+  "assessmentTime",
   "notificationDate",
   "place",
   "amount",
   "reducedAmount",
   "article",
   "paragraph",
+  "speedDetected",
+  "speedLimit",
+  "speedExcess",
+  "licensePoints",
+  "minimumAmount",
+  "administrativeFees",
+  "deviceName",
+  "approvalDecree",
+  "calibrationCheck",
   "eventSummary",
   "violationType",
 ];
 const violationTypes = [
   "ZTL / accesso area vietata",
-  "autovelox / eccesso di velocità",
+  "Autovelox / Eccesso di velocità",
   "divieto di sosta",
   "semaforo rosso",
   "mancata revisione",

@@ -14,7 +14,7 @@ export type ScreeningOutcome =
 
 export type ViolationClassification =
   | "ZTL / accesso area vietata"
-  | "autovelox / eccesso di velocità"
+  | "Autovelox / Eccesso di velocità"
   | "divieto di sosta"
   | "semaforo rosso"
   | "mancata revisione"
@@ -27,21 +27,46 @@ export type ViolationClassification =
 
 export type FieldConfidence = "Alta" | "Media" | "Bassa" | "Non rilevato";
 
+export type PageClassification =
+  | "MAIN_VERBALE"
+  | "PAYMENT_NOTICE"
+  | "DRIVER_COMMUNICATION_FORM"
+  | "WARNINGS"
+  | "NOISE_OR_COVER";
+
+export type ClassifiedDocumentPage = {
+  pageNumber: number;
+  classification: PageClassification;
+  score: number;
+  textPreview: string;
+};
+
 export type ExtractedDataField = {
   key:
     | "authority"
     | "municipality"
     | "reportNumber"
+    | "registryNumber"
     | "plate"
     | "violationDate"
     | "violationTime"
     | "assessmentDate"
+    | "assessmentTime"
     | "notificationDate"
     | "place"
     | "amount"
     | "reducedAmount"
     | "article"
     | "paragraph"
+    | "speedDetected"
+    | "speedLimit"
+    | "speedExcess"
+    | "licensePoints"
+    | "minimumAmount"
+    | "administrativeFees"
+    | "deviceName"
+    | "approvalDecree"
+    | "calibrationCheck"
     | "eventSummary"
     | "violationType";
   label: string;
@@ -53,15 +78,26 @@ export type IdentifiedFineData = {
   authority: string;
   municipality: string;
   reportNumber: string;
+  registryNumber: string;
   plate: string;
   violationDate: string;
   violationTime: string;
   assessmentDate: string;
+  assessmentTime: string;
   notificationDate: string;
   amount: string;
   reducedAmount: string;
   article: string;
   paragraph: string;
+  speedDetected: string;
+  speedLimit: string;
+  speedExcess: string;
+  licensePoints: string;
+  minimumAmount: string;
+  administrativeFees: string;
+  deviceName: string;
+  approvalDecree: string;
+  calibrationCheck: string;
   violationType: ViolationClassification;
   place: string;
 };
@@ -91,6 +127,34 @@ export type ScreeningReport = {
   };
   identifiedData: IdentifiedFineData;
   extractedData: ExtractedDataField[];
+  normalizedData: {
+    articleCode: string;
+    paragraph: string;
+    violationTime: string;
+    detectionTime: string;
+    reducedAmount: string;
+    standardAmount: string;
+    speedDetected: number | null;
+    speedLimit: number | null;
+    speedExcess: number | null;
+    points: number | null;
+    classification: ViolationClassification;
+  };
+  extractionDebug: {
+    pages: ClassifiedDocumentPage[];
+    selectedMainVerbalePage: number | null;
+    validationWarnings: string[];
+  };
+  extractionLog: {
+    identified: { field: string; confidence: FieldConfidence }[];
+    missing: { field: string; confidence: FieldConfidence }[];
+    confidenceByField: Record<string, FieldConfidence>;
+  };
+  consistencyChecks: {
+    title: string;
+    status: "Coerente" | "Da verificare" | "Non verificabile";
+    detail: string;
+  }[];
   violatedRule: {
     article: string;
     paragraph: string;
