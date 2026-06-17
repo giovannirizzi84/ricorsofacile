@@ -94,16 +94,21 @@ export async function buildScreeningReportPdf(report: ScreeningReport) {
 function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
   renderCoverHeader(doc);
 
+  const boxX = MARGIN_X;
+  const boxW = 174;
+  const innerX = boxX + 14;
+  const valueX = boxX + 78;
+
   setPdfFont(doc, "normal");
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.muted);
   doc.text(`Data generazione: ${formatDateTime(new Date())}`, MARGIN_X, 58);
 
-  drawPanel(doc, MARGIN_X, 72, 174, 88, COLORS.soft, COLORS.line);
+  drawPanel(doc, boxX, 72, boxW, 88, COLORS.soft, COLORS.line);
   setPdfFont(doc, "bold");
   doc.setFontSize(12);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Sintesi dello screening", MARGIN_X + 8, 86);
+  doc.text("Sintesi dello screening", innerX, 87);
 
   const rows = [
     ["Esito preliminare", report.outcome],
@@ -117,24 +122,24 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
     ["Punti patente", getExtractedValue(report, "licensePoints")],
   ];
 
-  let y = 99;
+  let y = 101;
   for (const [label, value] of rows) {
     setPdfFont(doc, "normal");
     doc.setFontSize(9);
     doc.setTextColor(...COLORS.muted);
-    doc.text(label, MARGIN_X + 8, y);
+    doc.text(label, innerX, y);
     setPdfFont(doc, "bold");
     doc.setFontSize(10);
     doc.setTextColor(...COLORS.ink);
-    doc.text(trimToWidth(doc, value, 90), MARGIN_X + 65, y);
-    y += 10;
+    doc.text(trimToWidth(doc, value, 78), valueX, y);
+    y += 9.5;
   }
 
-  drawSectionTitle(doc, "Raccomandazione finale", 178);
-  drawTextBlock(doc, report.finalRecommendation, MARGIN_X, 188, 174, 38);
+  drawSectionTitle(doc, "Raccomandazione finale", 176);
+  drawTextBlock(doc, report.finalRecommendation, boxX, 187, boxW, 38);
 
-  drawSectionTitle(doc, "Nota importante", 238);
-  drawTextBlock(doc, report.disclaimer, MARGIN_X, 248, 174, 24, {
+  drawSectionTitle(doc, "Nota importante", 237);
+  drawTextBlock(doc, report.disclaimer, boxX, 248, boxW, 24, {
     fill: COLORS.amber,
     stroke: COLORS.amberLine,
   });
@@ -146,8 +151,9 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
   const fields = orderedFields(report.extractedData);
   const tableX = MARGIN_X;
   const tableY = 47;
-  const col1 = 56;
-  const col2 = 118;
+  const col1 = 58;
+  const col2 = 116;
+  const cellPadX = 6;
   let y = tableY;
 
   doc.setFillColor(...COLORS.brandDark);
@@ -155,8 +161,8 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
   setPdfFont(doc, "bold");
   doc.setFontSize(9);
   doc.setTextColor(...COLORS.white);
-  doc.text("Campo", tableX + 4, y + 6);
-  doc.text("Valore", tableX + col1 + 4, y + 6);
+  doc.text("Campo", tableX + cellPadX, y + 6);
+  doc.text("Valore", tableX + col1 + cellPadX, y + 6);
   y += 9;
 
   for (const field of fields) {
@@ -166,7 +172,7 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
     const value = confidenceSuffix
       ? `${formattedFieldValue} (${confidenceSuffix})`
       : formattedFieldValue;
-    const lines = doc.splitTextToSize(value, col2 - 8).slice(0, 2);
+    const lines = doc.splitTextToSize(value, col2 - cellPadX * 2).slice(0, 2);
     const rowHeight = Math.max(7, 4 * lines.length + 3);
 
     doc.setDrawColor(...COLORS.line);
@@ -178,11 +184,11 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
     setPdfFont(doc, "bold");
     doc.setFontSize(8);
     doc.setTextColor(...COLORS.ink);
-    doc.text(field.label, tableX + 4, y + 5);
+    doc.text(field.label, tableX + cellPadX, y + 5);
 
     setPdfFont(doc, "normal");
     doc.setTextColor(...COLORS.ink);
-    doc.text(lines, tableX + col1 + 4, y + 5);
+    doc.text(lines, tableX + col1 + cellPadX, y + 5);
     y += rowHeight;
   }
 
@@ -191,7 +197,7 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
   doc.setTextColor(...COLORS.muted);
   doc.text(
     "L'affidabilita viene indicata solo per dati con confidenza media, bassa o non rilevati.",
-    MARGIN_X,
+    MARGIN_X + 6,
     272,
   );
 }
@@ -252,13 +258,13 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
     187,
   );
 
-  drawPanel(doc, boxX, 214, boxW, 42, COLORS.blueSoft, COLORS.line);
-  drawSectionTitleAt(doc, "Osservazione preliminare", innerX, 230);
+  drawPanel(doc, boxX, 212, boxW, 44, COLORS.blueSoft, COLORS.line);
+  drawSectionTitleAt(doc, "Osservazione preliminare", innerX, 227);
   drawTextBlock(
     doc,
     "Non emergono criticità formali evidenti dal solo verbale caricato. Tuttavia può essere utile verificare la documentazione tecnica e fotografica disponibile.",
     innerX,
-    240,
+    238,
     146,
     16,
   );
@@ -275,12 +281,14 @@ function renderNextStepPage(
   const rightX = 128;
   const leftW = 96;
   const rightW = 64;
+  const leftInnerX = leftX + 12;
+  const rightInnerX = rightX + 12;
 
   drawPanel(doc, leftX, 52, leftW, 176, COLORS.soft, COLORS.line);
   setPdfFont(doc, "bold");
   doc.setFontSize(15.5);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Consulenza Legale 19,90 €", leftX + 9, 74);
+  doc.text("Consulenza Legale 19,90 €", leftInnerX, 75);
 
   setPdfFont(doc, "normal");
   doc.setFontSize(9.5);
@@ -288,13 +296,13 @@ function renderNextStepPage(
   doc.text(
     doc.splitTextToSize(
       "Una revisione professionale del verbale per verificare lo screening, valutare la convenienza economica e indicare il percorso piu opportuno prima di decidere se procedere.",
-      74,
+      72,
     ),
-    leftX + 9,
-    93,
+    leftInnerX,
+    94,
   );
 
-  drawSectionTitleAt(doc, "Perche richiedere la consulenza", leftX + 9, 136);
+  drawSectionTitleAt(doc, "Perche richiedere la consulenza", leftInnerX, 136);
   const consultationBenefits = [
     "Verifica documentazione fotografica",
     "Verifica taratura e verifiche periodiche",
@@ -304,27 +312,27 @@ function renderNextStepPage(
     "Confronto con orientamenti giurisprudenziali rilevanti",
   ];
 
-  let y = 149;
+  let y = 150;
   for (const benefit of consultationBenefits) {
-    drawCheckItem(doc, benefit, leftX + 9, y, 8.4);
+    drawCheckItem(doc, benefit, leftInnerX, y, 8.4);
     y += 10;
   }
 
-  drawButton(doc, "Prenota consulenza 19,90 €", leftX + 9, 207, 72, 13);
+  drawButton(doc, "Prenota consulenza 19,90 €", leftInnerX, 209, 72, 13);
 
   drawPanel(doc, rightX, 52, rightW, 128, COLORS.white, COLORS.line);
   setPdfFont(doc, "bold");
   doc.setFontSize(16);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Prenota la", rightX + 10, 74);
-  doc.text("consulenza", rightX + 10, 84);
+  doc.text("Prenota la", rightInnerX, 75);
+  doc.text("consulenza", rightInnerX, 85);
   setPdfFont(doc, "normal");
   doc.setFontSize(9);
   doc.setTextColor(...COLORS.muted);
-  doc.text("Scansiona il QR code", rightX + 10, 98);
+  doc.text("Scansiona il QR code", rightInnerX, 99);
   doc.addImage(qrCode, "PNG", rightX + 12, 108, 40, 40);
   doc.setFontSize(8);
-  doc.text(DISPLAY_URL, rightX + 10, 163);
+  doc.text(DISPLAY_URL, rightInnerX, 164);
 
   drawSectionTitle(doc, "Costi esterni", 244);
   drawTextBlock(
