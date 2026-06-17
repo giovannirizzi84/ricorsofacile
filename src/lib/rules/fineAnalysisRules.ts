@@ -277,12 +277,12 @@ function extractFacts(
   ) ?? findPaymentAmount(paymentText, "standard");
   const labelledAmount = matchAmount(
     text,
-    /(?:sanzione|importo|somma\s+di|pagamento)[^\d€]{0,25}(?:€\s*)?(\d{1,5}(?:[.,]\d{2})?)/i,
+    /(?:sanzione|importo|somma\s+di|pagamento|totale)[^\d€]{0,35}(?:(?:€|Euro)\s*)?(\d{1,5}(?:[.,]\d{2})?)/i,
   );
   const amount = rejectInvalidAmount(
     ordinaryAmount ?? labelledAmount ?? matchAmount(
     text,
-    /€\s*(\d{1,5}(?:[.,]\d{2})?)/i,
+    /(?:€|Euro)\s*(\d{1,5}(?:[.,]\d{2})?)/i,
     ),
   );
   const reducedAmount =
@@ -326,19 +326,19 @@ function extractFacts(
   const assessmentTime = assessmentMoment.time;
   const speedDetected = matchNumber(
     text,
-    /circolava\s+alla\s+velocit[aà]\s+di\s+Km\/h\s*(\d{1,3})/i,
+    /(?:circolava\s+alla\s+velocit[aà]\s+di|velocit[aà]\s+rilevata\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
   );
   const speedLimit = matchNumber(
     text,
-    /limite\s+di\s+velocit[aà]\s+era\s+di\s+Km\/h\s*(\d{1,3})/i,
+    /(?:limite\s+di\s+velocit[aà]\s+(?:era\s+)?di|limite\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
   );
   const speedExcess = matchNumber(
     text,
-    /eccedeva\s+precisamente\s+di\s+Km\/h\s*(\d{1,3})/i,
+    /(?:eccedeva\s+precisamente\s+di|eccedenza(?:\s+dopo\s+tolleranza)?\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
   );
   const licensePoints = matchNumber(
     text,
-    /decurtazione\s+di\s+n\.?\s*(\d{1,2})\s+punti/i,
+    /(?:decurtazione\s+(?:di\s+)?(?:n\.?\s*)?|punti\s+patente\s*[:\-]?)\s*(\d{1,2})\s*(?:punti)?/i,
   );
   const minimumAmount = matchAmount(
     text,
@@ -361,7 +361,7 @@ function extractFacts(
     text,
   );
   const pointsDetected =
-    /decurtazione\s+(?:di\s+)?\d+\s+punti|perdita\s+(?:di\s+)?\d+\s+punti|punti\s+patente/i.test(
+    /decurtazione\s+(?:di\s+)?(?:n\.?\s*)?\d+\s*(?:punti)?|perdita\s+(?:di\s+)?\d+\s+punti|punti\s+patente\s*[:\-]?\s*\d*/i.test(
       text,
     );
   const suspensionDetected =
@@ -1491,14 +1491,14 @@ function extractContestedArticle(text: string) {
       .split(/\n/)
       .find((line) => /\bArt(?:icolo)?\.?\s*\d{1,3}/i.test(line) && /comma|Codice\s+della\s+Strada|C\.?d\.?S\.?/i.test(line));
   const fallbackLine = text.match(
-    /\bArt(?:icolo)?\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?[^\n]{0,120}(?:Codice\s+della\s+Strada|C\.?d\.?S\.?)/i,
+    /\bArt(?:icolo)?\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?(?:\s*\/\s*[0-9]+(?:[-\s]?(?:bis|ter|quater))?)?[^\n]{0,120}(?:Codice\s+della\s+Strada|C\.?d\.?S\.?)/i,
   )?.[0];
   const line = targetedLine ?? fallbackLine;
   const article = line
     ?.match(/Art(?:icolo)?\.?\s*(\d{1,3}(?:[-\s]?(?:bis|ter|quater))?)/i)?.[1]
     ?.replace(/\s+/g, "-");
   const paragraph = line
-    ?.match(/(?:comma|co\.?)\s*([0-9]+(?:[-\s]?(?:bis|ter|quater))?)/i)?.[1]
+    ?.match(/(?:comma|co\.?|\d{1,3}(?:[-\s]?(?:bis|ter|quater))?\s*\/)\s*([0-9]+(?:[-\s]?(?:bis|ter|quater))?)/i)?.[1]
     ?.replace(/\s+/g, "-");
 
   return { article, paragraph };
