@@ -1,14 +1,18 @@
 import { jsPDF } from "jspdf";
+import QRCode from "qrcode";
 import type {
   ExtractedDataField,
   FieldConfidence,
   ScreeningReport,
 } from "../screening-report";
 
-const SITE_URL = "https://multeonline-rhyn.vercel.app";
+const CONSULTATION_URL =
+  "https://multeonline-rhyn.vercel.app/prezzi?pacchetto=consulenza";
+const DISPLAY_URL = "www.multeonline.it";
 const PAGE_WIDTH = 210;
 const MARGIN_X = 18;
 const BOTTOM_Y = 276;
+type RgbColor = readonly [number, number, number];
 const COLORS = {
   ink: [21, 43, 48],
   muted: [91, 108, 119],
@@ -19,7 +23,7 @@ const COLORS = {
   amber: [255, 247, 230],
   amberLine: [244, 190, 95],
   white: [255, 255, 255],
-} as const;
+} as const satisfies Record<string, RgbColor>;
 
 const fieldOrder: ExtractedDataField["key"][] = [
   "authority",
@@ -50,13 +54,18 @@ const fieldOrder: ExtractedDataField["key"][] = [
   "eventSummary",
 ];
 
-export function generateScreeningReportPdf(report: ScreeningReport) {
-  const doc = buildScreeningReportPdf(report);
+export async function generateScreeningReportPdf(report: ScreeningReport) {
+  const doc = await buildScreeningReportPdf(report);
   doc.save("MulteOnline-relazione-preliminare.pdf");
 }
 
-export function buildScreeningReportPdf(report: ScreeningReport) {
+export async function buildScreeningReportPdf(report: ScreeningReport) {
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
+  const qrCode = await QRCode.toDataURL(CONSULTATION_URL, {
+    errorCorrectionLevel: "M",
+    margin: 1,
+    scale: 6,
+  });
 
   renderSummaryPage(doc, report);
   doc.addPage();
@@ -64,7 +73,7 @@ export function buildScreeningReportPdf(report: ScreeningReport) {
   doc.addPage();
   renderIssuesPage(doc, report);
   doc.addPage();
-  renderNextStepPage(doc, report);
+  renderNextStepPage(doc, report, qrCode);
 
   for (let page = 1; page <= doc.getNumberOfPages(); page += 1) {
     doc.setPage(page);
@@ -75,18 +84,18 @@ export function buildScreeningReportPdf(report: ScreeningReport) {
 }
 
 function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
-  renderHeader(doc, "Relazione preliminare sul verbale");
+  renderCoverHeader(doc);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.muted);
-  doc.text(`Data generazione: ${formatDateTime(new Date())}`, MARGIN_X, 43);
+  doc.text(`Data generazione: ${formatDateTime(new Date())}`, MARGIN_X, 58);
 
-  drawPanel(doc, MARGIN_X, 55, 174, 88, COLORS.soft, COLORS.line);
+  drawPanel(doc, MARGIN_X, 72, 174, 88, COLORS.soft, COLORS.line);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Sintesi dello screening", MARGIN_X + 8, 69);
+  doc.text("Sintesi dello screening", MARGIN_X + 8, 86);
 
   const rows = [
     ["Esito preliminare", report.outcome],
@@ -97,7 +106,7 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
     ["Punti patente", getExtractedValue(report, "licensePoints")],
   ];
 
-  let y = 82;
+  let y = 99;
   for (const [label, value] of rows) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
@@ -106,15 +115,15 @@ function renderSummaryPage(doc: jsPDF, report: ScreeningReport) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(...COLORS.ink);
-    doc.text(trimToWidth(doc, value, 90), MARGIN_X + 65, y);
+    drawTextWithEuro(doc, trimToWidth(doc, value, 90), MARGIN_X + 65, y);
     y += 10;
   }
 
-  drawSectionTitle(doc, "Raccomandazione finale", 162);
-  drawTextBlock(doc, report.finalRecommendation, MARGIN_X, 172, 174, 50);
+  drawSectionTitle(doc, "Raccomandazione finale", 178);
+  drawTextBlock(doc, report.finalRecommendation, MARGIN_X, 188, 174, 38);
 
-  drawSectionTitle(doc, "Nota importante", 230);
-  drawTextBlock(doc, report.disclaimer, MARGIN_X, 240, 174, 24, {
+  drawSectionTitle(doc, "Nota importante", 238);
+  drawTextBlock(doc, report.disclaimer, MARGIN_X, 248, 174, 24, {
     fill: COLORS.amber,
     stroke: COLORS.amberLine,
   });
@@ -161,17 +170,17 @@ function renderDataPage(doc: jsPDF, report: ScreeningReport) {
 
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...COLORS.ink);
-    doc.text(lines, tableX + col1 + 4, y + 5);
+    drawTextLinesWithEuro(doc, lines, tableX + col1 + 4, y + 5);
     y += rowHeight;
   }
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
   doc.setTextColor(...COLORS.muted);
   doc.text(
     "L'affidabilita viene indicata solo per dati con confidenza media, bassa o non rilevati.",
     MARGIN_X,
-    270,
+    272,
   );
 }
 
@@ -238,17 +247,21 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
   );
 }
 
-function renderNextStepPage(doc: jsPDF, report: ScreeningReport) {
+function renderNextStepPage(
+  doc: jsPDF,
+  report: ScreeningReport,
+  qrCode: string,
+) {
   renderHeader(doc, "Passo successivo");
 
-  drawPanel(doc, MARGIN_X, 48, 174, 120, COLORS.soft, COLORS.line);
+  drawPanel(doc, MARGIN_X, 48, 174, 82, COLORS.soft, COLORS.line);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(24);
+  doc.setFontSize(23);
   doc.setTextColor(...COLORS.brandDark);
-  doc.text("Consulenza Legale €19,90", MARGIN_X + 12, 75);
+  drawTextWithEuro(doc, "Consulenza Legale €19,90", MARGIN_X + 12, 72);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(...COLORS.ink);
   doc.text(
     doc.splitTextToSize(
@@ -256,27 +269,81 @@ function renderNextStepPage(doc: jsPDF, report: ScreeningReport) {
       150,
     ),
     MARGIN_X + 12,
-    98,
+    91,
   );
 
-  drawButton(doc, "Vai su multeonline-rhyn.vercel.app", MARGIN_X + 12, 135, 92, 15);
+  drawButton(doc, "Prenota consulenza €19,90", MARGIN_X + 12, 113, 76, 14);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(...COLORS.muted);
-  doc.text(SITE_URL, MARGIN_X + 12, 159);
+  doc.text(DISPLAY_URL, MARGIN_X + 96, 122);
 
-  drawSectionTitle(doc, "Raccomandazione prudenziale", 194);
-  drawTextBlock(doc, report.suggestedNextStep || report.finalRecommendation, MARGIN_X, 204, 174, 34);
+  drawSectionTitle(doc, "Perche richiedere la consulenza", 150);
+  const consultationBenefits = [
+    "Verifica documentazione fotografica",
+    "Verifica taratura e verifiche periodiche",
+    "Verifica segnalazione preventiva",
+    "Verifica termini e notifiche",
+    "Valutazione della convenienza del ricorso",
+    "Confronto con orientamenti giurisprudenziali rilevanti",
+  ];
 
-  drawSectionTitle(doc, "Costi esterni", 250);
+  let y = 162;
+  for (const benefit of consultationBenefits) {
+    drawCheckItem(doc, benefit, MARGIN_X + 1, y);
+    y += 9;
+  }
+
+  drawPanel(doc, 132, 146, 46, 56, COLORS.white, COLORS.line);
+  doc.addImage(qrCode, "PNG", 140, 151, 30, 30);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    doc.splitTextToSize(
+      "Scansiona il QR code per richiedere la consulenza.",
+      34,
+    ),
+    138,
+    188,
+    { align: "center" },
+  );
+
+  drawSectionTitle(doc, "Costi esterni", 230);
   drawTextBlock(
     doc,
     "Eventuali contributi, marche, diritti, spese di notifica, contributo unificato o altri costi previsti dalla normativa restano a carico del cliente.",
     MARGIN_X,
-    260,
+    240,
     174,
     18,
   );
+}
+
+function renderCoverHeader(doc: jsPDF) {
+  doc.setFillColor(...COLORS.brandDark);
+  doc.rect(0, 0, PAGE_WIDTH, 24, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(...COLORS.white);
+  doc.text("MulteOnline", MARGIN_X, 15);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(24);
+  doc.setTextColor(...COLORS.ink);
+  doc.text("MulteOnline", MARGIN_X, 38);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    "Screening preliminare verbali e sanzioni amministrative",
+    MARGIN_X,
+    47,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.setTextColor(...COLORS.brandDark);
+  doc.text("Relazione preliminare sul verbale", MARGIN_X, 54);
 }
 
 function renderHeader(doc: jsPDF, title: string) {
@@ -299,8 +366,15 @@ function renderFooter(doc: jsPDF, page: number, total: number) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
-  doc.text("Screening preliminare automatizzato - non costituisce parere legale", MARGIN_X, 284);
-  doc.text(`${page}/${total}`, PAGE_WIDTH - MARGIN_X, 284, { align: "right" });
+  if (page === total) {
+    doc.text(
+      "Lo screening ha finalita esclusivamente informative e preliminari e non costituisce parere legale.",
+      MARGIN_X,
+      284,
+    );
+  } else {
+    doc.text(`MulteOnline | Pagina ${page} di ${total}`, MARGIN_X, 284);
+  }
 }
 
 function drawSectionTitle(doc: jsPDF, title: string, y: number) {
@@ -325,7 +399,88 @@ function drawTextBlock(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.ink);
-  doc.text(doc.splitTextToSize(text, width - (options ? 14 : 0)), x + (options ? 7 : 0), y + 2);
+  drawTextLinesWithEuro(
+    doc,
+    doc.splitTextToSize(text, width - (options ? 14 : 0)),
+    x + (options ? 7 : 0),
+    y + 2,
+  );
+}
+
+function drawTextLinesWithEuro(
+  doc: jsPDF,
+  lines: string | string[],
+  x: number,
+  y: number,
+  lineHeight = 4.5,
+  color: RgbColor = COLORS.ink,
+) {
+  const textLines = Array.isArray(lines) ? lines : [lines];
+  textLines.forEach((line, index) => {
+    drawTextWithEuro(doc, line, x, y + index * lineHeight, color);
+  });
+}
+
+function drawTextWithEuro(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  color: RgbColor = COLORS.ink,
+) {
+  const parts = text.split("€");
+  let cursorX = x;
+
+  parts.forEach((part, index) => {
+    if (index > 0) {
+      drawEuroGlyph(doc, cursorX, y, color);
+      cursorX += getEuroGlyphWidth(doc);
+    }
+    if (part) {
+      doc.text(part, cursorX, y);
+      cursorX += doc.getTextWidth(part);
+    }
+  });
+}
+
+function getEuroAwareTextWidth(doc: jsPDF, text: string) {
+  return text
+    .split("€")
+    .reduce(
+      (width, part, index) =>
+        width +
+        doc.getTextWidth(part) +
+        (index > 0 ? getEuroGlyphWidth(doc) : 0),
+      0,
+    );
+}
+
+function drawEuroGlyph(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  color: RgbColor,
+) {
+  const height = doc.getFontSize() * 0.34;
+  const width = getEuroGlyphWidth(doc) - 0.5;
+  const top = y - height * 0.78;
+  const middle = y - height * 0.42;
+  const bottom = y - height * 0.08;
+  const previousLineWidth = doc.getLineWidth();
+
+  doc.setDrawColor(...color);
+  doc.setLineWidth(Math.max(0.45, height * 0.12));
+  doc.line(x + width, top, x + width * 0.35, top);
+  doc.line(x + width * 0.35, top, x + width * 0.1, middle);
+  doc.line(x + width * 0.1, middle, x + width * 0.35, bottom);
+  doc.line(x + width * 0.35, bottom, x + width, bottom);
+  doc.line(x - width * 0.08, y - height * 0.54, x + width * 0.9, y - height * 0.54);
+  doc.line(x - width * 0.08, y - height * 0.34, x + width * 0.82, y - height * 0.34);
+  doc.setLineWidth(previousLineWidth);
+}
+
+function getEuroGlyphWidth(doc: jsPDF) {
+  return Math.max(3.8, doc.getFontSize() * 0.25);
 }
 
 function drawPanel(
@@ -367,8 +522,14 @@ function drawButton(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.white);
-  doc.text(label, x + width / 2, y + height / 2 + 1.5, { align: "center" });
-  doc.link(x, y, width, height, { url: SITE_URL });
+  drawTextWithEuro(
+    doc,
+    label,
+    x + width / 2 - getEuroAwareTextWidth(doc, label) / 2,
+    y + height / 2 + 1.5,
+    COLORS.white,
+  );
+  doc.link(x, y, width, height, { url: CONSULTATION_URL });
 }
 
 function orderedFields(fields: ExtractedDataField[]) {

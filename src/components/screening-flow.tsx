@@ -543,7 +543,9 @@ function Report({ report }: { report: ScreeningReport }) {
         <Button
           variant="outline"
           className="rounded-full print:hidden"
-          onClick={() => generateScreeningReportPdf(report)}
+          onClick={() => {
+            void generateScreeningReportPdf(report);
+          }}
         >
           <Printer className="size-4" /> Scarica PDF
         </Button>
