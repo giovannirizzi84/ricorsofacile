@@ -204,8 +204,8 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
   const innerX = boxX + 14;
   const valueX = boxX + 86;
 
-  drawPanel(doc, boxX, 54, boxW, 72, COLORS.greenSoft, COLORS.line);
-  drawSectionTitleAt(doc, "Verifiche documentali", innerX, 71);
+  drawPanel(doc, boxX, 52, boxW, 70, COLORS.greenSoft, COLORS.line);
+  drawSectionTitleAt(doc, "Verifiche documentali", innerX, 66);
   const documentChecks = [
     "documentazione fotografica",
     "segnalazione preventiva",
@@ -214,20 +214,20 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
     "atti disponibili",
   ];
 
-  let y = 87;
+  let y = 81;
   for (const item of documentChecks) {
     drawCheckItem(doc, item, innerX + 2, y, 8.8);
-    y += 8.2;
+    y += 8;
   }
 
-  drawPanel(doc, boxX, 140, boxW, 66, COLORS.amber, COLORS.amberLine);
-  drawSectionTitleAt(doc, "Verifiche di coerenza", innerX, 157);
+  drawPanel(doc, boxX, 132, boxW, 66, COLORS.amber, COLORS.amberLine);
+  drawSectionTitleAt(doc, "Verifiche di coerenza", innerX, 148);
   const speedRows = [
     ["Velocità rilevata", getExtractedValue(report, "speedDetected")],
     ["Limite", getExtractedValue(report, "speedLimit")],
     ["Eccedenza verbalizzata", getExtractedValue(report, "speedExcess")],
   ];
-  let rowY = 172;
+  let rowY = 162;
   for (const [label, value] of speedRows) {
     setPdfFont(doc, "normal");
     doc.setFontSize(9.5);
@@ -237,7 +237,7 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
     doc.setFontSize(10.5);
     doc.setTextColor(...COLORS.ink);
     doc.text(value || "Non rilevato nel documento caricato", valueX, rowY);
-    rowY += 8.5;
+    rowY += 8.2;
   }
 
   setPdfFont(doc, "normal");
@@ -249,16 +249,16 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
       154,
     ),
     innerX,
-    195,
+    187,
   );
 
-  drawPanel(doc, boxX, 220, boxW, 42, COLORS.blueSoft, COLORS.line);
-  drawSectionTitleAt(doc, "Osservazione preliminare", innerX, 236);
+  drawPanel(doc, boxX, 214, boxW, 42, COLORS.blueSoft, COLORS.line);
+  drawSectionTitleAt(doc, "Osservazione preliminare", innerX, 230);
   drawTextBlock(
     doc,
     "Non emergono criticità formali evidenti dal solo verbale caricato. Tuttavia può essere utile verificare la documentazione tecnica e fotografica disponibile.",
     innerX,
-    246,
+    240,
     146,
     16,
   );
