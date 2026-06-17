@@ -449,6 +449,7 @@ function classifyViolation(
 } {
   const value = normalize(source);
   if (
+    /sosta\s*\/?\s*rimozione|tipo\s+violazione\s+sosta\s*\/?\s*rimozione/.test(value) ||
     /rimozione\s+del\s+veicolo|sanzione\s+accessoria\s+della\s+rimozione|spese\s+di\s+rimozione|custodia/.test(
       value,
     ) &&
@@ -1037,28 +1038,43 @@ function buildConsistencyChecks(
   facts: ExtractedFacts,
 ): ScreeningReport["consistencyChecks"] {
   const checks: ScreeningReport["consistencyChecks"] = [];
-  if (
-    facts.speedDetected !== undefined &&
-    facts.speedLimit !== undefined &&
-    facts.speedExcess !== undefined
-  ) {
-    const arithmeticExcess = facts.speedDetected - facts.speedLimit;
-    const status =
-      arithmeticExcess === facts.speedExcess ? "Coerente" : "Da verificare";
+  const isSpeedViolation =
+    facts.article === "142" ||
+    facts.violationType === "Autovelox / Eccesso di velocità";
+
+  if (isSpeedViolation) {
+    if (
+      facts.speedDetected !== undefined &&
+      facts.speedLimit !== undefined &&
+      facts.speedExcess !== undefined
+    ) {
+      const arithmeticExcess = facts.speedDetected - facts.speedLimit;
+      const status =
+        arithmeticExcess === facts.speedExcess ? "Coerente" : "Da verificare";
+      checks.push({
+        title: "Coerenza velocità e superamento",
+        status,
+        detail:
+          status === "Coerente"
+            ? `La velocità rilevata (${facts.speedDetected} km/h) meno il limite (${facts.speedLimit} km/h) coincide con il superamento indicato (${facts.speedExcess} km/h).`
+            : `La differenza aritmetica tra velocità rilevata (${facts.speedDetected} km/h) e limite (${facts.speedLimit} km/h) è ${arithmeticExcess} km/h, mentre il verbale indica ${facts.speedExcess} km/h. Verificare la tolleranza applicata e la velocità calcolata in verbalizzazione.`,
+      });
+    } else {
+      checks.push({
+        title: "Coerenza velocità e superamento",
+        status: "Non verificabile",
+        detail:
+          "Velocità rilevata, limite o superamento non sono stati individuati con sufficiente certezza.",
+      });
+    }
+  }
+
+  if (facts.violationType === "Sosta / Rimozione") {
     checks.push({
-      title: "Coerenza velocità e superamento",
-      status,
+      title: "Coerenza sosta, importi e rimozione",
+      status: facts.amount ? "Da verificare" : "Non verificabile",
       detail:
-        status === "Coerente"
-          ? `La velocità rilevata (${facts.speedDetected} km/h) meno il limite (${facts.speedLimit} km/h) coincide con il superamento indicato (${facts.speedExcess} km/h).`
-          : `La differenza aritmetica tra velocità rilevata (${facts.speedDetected} km/h) e limite (${facts.speedLimit} km/h) è ${arithmeticExcess} km/h, mentre il verbale indica ${facts.speedExcess} km/h. Verificare la tolleranza applicata e la velocità calcolata in verbalizzazione.`,
-    });
-  } else {
-    checks.push({
-      title: "Coerenza velocità e superamento",
-      status: "Non verificabile",
-      detail:
-        "Velocità rilevata, limite o superamento non sono stati individuati con sufficiente certezza.",
+        "Verificare corretta indicazione del luogo, presenza o assenza del titolo/autorizzazione, importi, totale, rimozione del veicolo e notifica del verbale.",
     });
   }
 
@@ -1105,6 +1121,15 @@ function buildPotentialIssues(facts: ExtractedFacts, reasons: RuleResult[]) {
       "Verifica autorizzazione al transito e orari della ZTL",
       "Verifica documentazione fotografica del varco",
       "Verifica segnaletica e informazioni disponibili sul percorso",
+    );
+  }
+  if (facts.violationType === "Sosta / Rimozione") {
+    issues.push(
+      "Verifica corretta indicazione del luogo della sosta",
+      "Verifica presenza o assenza del titolo/autorizzazione",
+      "Verifica importi delle singole violazioni e totale richiesto",
+      "Verifica applicazione della rimozione del veicolo",
+      "Verifica notifica del verbale e decorrenza dei termini",
     );
   }
   return unique(issues);

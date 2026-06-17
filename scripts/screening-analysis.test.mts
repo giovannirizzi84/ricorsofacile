@@ -625,6 +625,14 @@ test("golden-bologna-sosta-rimozione-vision-pipeline.test", async (context) => {
     assert.equal(field(report, "amount").value, "€93,60");
     assert.equal(report.violationClassification.value, "Sosta / Rimozione");
     assert.match(report.eventSummary, /rimozione del veicolo/i);
+    assert.doesNotMatch(
+      JSON.stringify(report.consistencyChecks),
+      /differenza aritmetica|velocità rilevata|superamento/i,
+    );
+    assert.match(
+      JSON.stringify(report.potentialIssues),
+      /rimozione|luogo|notifica|documentazione/i,
+    );
   } finally {
     if (previousKey) {
       process.env.GEMINI_API_KEY = previousKey;

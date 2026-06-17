@@ -78,7 +78,7 @@ type GeminiVisionImage = {
   data: string;
 };
 
-type GeminiVisionOutput = {
+export type GeminiVisionOutput = {
   authority?: string;
   municipality?: string;
   noticeNumber?: string;

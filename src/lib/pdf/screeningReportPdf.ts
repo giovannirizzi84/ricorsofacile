@@ -228,35 +228,58 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
 
   drawPanel(doc, boxX, 132, boxW, 66, COLORS.amber, COLORS.amberLine);
   drawSectionTitleAt(doc, "Verifiche di coerenza", innerX, 148);
-  const speedRows = [
-    ["Velocità rilevata", getExtractedValue(report, "speedDetected")],
-    ["Limite", getExtractedValue(report, "speedLimit")],
-    ["Eccedenza verbalizzata", getExtractedValue(report, "speedExcess")],
-  ];
-  let rowY = 162;
-  for (const [label, value] of speedRows) {
-    setPdfFont(doc, "normal");
-    doc.setFontSize(9.5);
-    doc.setTextColor(...COLORS.muted);
-    doc.text(label, innerX, rowY);
-    setPdfFont(doc, "bold");
-    doc.setFontSize(10.5);
-    doc.setTextColor(...COLORS.ink);
-    doc.text(value || "Non rilevato nel documento caricato", valueX, rowY);
-    rowY += 8.2;
-  }
+  if (shouldShowSpeedCoherence(report)) {
+    const speedRows = [
+      ["Velocità rilevata", getExtractedValue(report, "speedDetected")],
+      ["Limite", getExtractedValue(report, "speedLimit")],
+      ["Eccedenza verbalizzata", getExtractedValue(report, "speedExcess")],
+    ];
+    let rowY = 162;
+    for (const [label, value] of speedRows) {
+      setPdfFont(doc, "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...COLORS.muted);
+      doc.text(label, innerX, rowY);
+      setPdfFont(doc, "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(...COLORS.ink);
+      doc.text(value || "Non rilevato nel documento caricato", valueX, rowY);
+      rowY += 8.2;
+    }
 
-  setPdfFont(doc, "normal");
-  doc.setFontSize(8.8);
-  doc.setTextColor(...COLORS.ink);
-  doc.text(
-    doc.splitTextToSize(
-      "La differenza aritmetica è 18 km/h. Il verbale indica 13 km/h dopo applicazione della tolleranza. Verificare la velocità considerata ai fini della contestazione.",
-      154,
-    ),
-    innerX,
-    187,
-  );
+    setPdfFont(doc, "normal");
+    doc.setFontSize(8.8);
+    doc.setTextColor(...COLORS.ink);
+    doc.text(
+      doc.splitTextToSize(
+        "La differenza aritmetica è 18 km/h. Il verbale indica 13 km/h dopo applicazione della tolleranza. Verificare la velocità considerata ai fini della contestazione.",
+        154,
+      ),
+      innerX,
+      187,
+    );
+  } else {
+    const coherenceChecks =
+      report.violationClassification.value === "Sosta / Rimozione"
+        ? [
+            "verifica corretta indicazione del luogo",
+            "verifica presenza o assenza del titolo/autorizzazione",
+            "verifica importi e totale",
+            "verifica rimozione veicolo",
+            "verifica notifica del verbale",
+          ]
+        : [
+            "verifica coerenza dei dati identificati",
+            "verifica importi e termini indicati",
+            "verifica documentazione disponibile",
+          ];
+
+    let checkY = 163;
+    for (const item of coherenceChecks) {
+      drawCheckItem(doc, item, innerX + 2, checkY, 8.8);
+      checkY += 8;
+    }
+  }
 
   drawPanel(doc, boxX, 212, boxW, 44, COLORS.blueSoft, COLORS.line);
   drawSectionTitleAt(doc, "Osservazione preliminare", innerX, 227);
@@ -268,6 +291,23 @@ function renderIssuesPage(doc: jsPDF, report: ScreeningReport) {
     146,
     16,
   );
+}
+
+function shouldShowSpeedCoherence(report: ScreeningReport) {
+  return (
+    report.violationClassification.value === "Autovelox / Eccesso di velocità" &&
+    hasExtractedValue(report, "speedDetected") &&
+    hasExtractedValue(report, "speedLimit") &&
+    hasExtractedValue(report, "speedExcess")
+  );
+}
+
+function hasExtractedValue(
+  report: ScreeningReport,
+  key: ExtractedDataField["key"],
+) {
+  const value = getExtractedValue(report, key);
+  return Boolean(value && !/Non rilevato/i.test(value));
 }
 
 function renderNextStepPage(

@@ -14,6 +14,7 @@
     "test:screening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types scripts/*.test.mts",
     "test:vision": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/gemini-vision-live-test.mts",
     "diagnose:bologna": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/golden-bologna-diagnostic.mts",
+    "diagnose:api-bologna": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/diagnose-api-bologna.mts",
     "evaluate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-dataset.mts"
   },
   "dependencies": {

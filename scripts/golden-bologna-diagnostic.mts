@@ -1,11 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  analyzeImagesWithGeminiVision,
-  enhanceReportWithGemini,
-} from "../src/lib/ai/geminiClient.ts";
-import { extractDocuments } from "../src/lib/documents/extractText.ts";
-import { analyzeFineText } from "../src/lib/rules/fineAnalysisRules.ts";
+  analyzeUploadedDocuments,
+  type AnalyzeUploadedDocumentsResult,
+} from "../src/lib/analysis/analyzeDocument.ts";
 
 const datasetDir = path.join(
   process.cwd(),
@@ -41,61 +39,38 @@ async function main() {
     }),
   ];
 
-  let documents = await extractDocuments(files, {
-    deferOcrForVision: true,
-  });
-  const visionImages = documents.flatMap((document) => document.visionImages);
-  const visionResult = await analyzeImagesWithGeminiVision(visionImages);
-  let ocrRecoveryUsed = false;
-
-  if (shouldUseOcrRecovery(visionResult.text, documents)) {
-    documents = await extractDocuments(files);
-    ocrRecoveryUsed = true;
-  }
-  await saveDebugSegments(documents);
-
-  const ocrText = documents
-    .map(
-      (document, index) =>
-        `-- ${index + 1} of ${documents.length} --\nDOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
-    )
-    .join("\n\n---\n\n");
-  const extractedText = [
-    visionResult.text &&
-      `DOCUMENTO: Gemini Vision\nMETODO: Gemini Vision\n${visionResult.text}`,
-    ocrText,
-  ]
-    .filter(Boolean)
-    .join("\n\n---\n\n");
+  const analysis = await analyzeUploadedDocuments(
+    files,
+    {
+      notificationDate: "",
+      authority: "",
+      amount: "",
+      violationType: "",
+    },
+    {
+      analysisId: "golden-bologna-diagnostic",
+      debug: true,
+    },
+  );
+  const documents = analysis.diagnostics.documents;
+  const finalReport = analysis.report;
+  const ruleReport = analysis.diagnostics.ruleReport;
+  const extractedText = analysis.diagnostics.extractedText;
   const providerLog = {
-    parser: documents.some((document) => document.method === "Testo PDF"),
-    geminiVision: visionResult.available,
-    fallback: !visionResult.available || ocrRecoveryUsed,
-    ocrRecovery: ocrRecoveryUsed,
-    visionAttempted: visionResult.attempted,
-    visionStatus: visionResult.status,
-    model: visionResult.model,
-    documents: documents.map((document) => ({
+    ...analysis.processing.providerLog,
+    model: analysis.processing.vision.model,
+    documents: analysis.processing.documents.map((document) => ({
       filename: document.filename,
       method: document.method,
       type: document.analysis.type,
       textExtraction: document.analysis.textExtraction,
       imagePreprocessing: document.analysis.imagePreprocessing,
-      textCharacters: document.text.length,
-      visionImages: document.visionImages.length,
+      textCharacters: document.characters,
+      visionImages: document.visionImages,
       warnings: document.warnings,
     })),
   };
-  const ruleReport = analyzeFineText(extractedText, {
-    notificationDate: "",
-    authority: "",
-    amount: "",
-    violationType: "",
-  }, {
-    method: "OCR + regole",
-    warnings: documents.flatMap((document) => document.warnings),
-  });
-  const finalReport = await enhanceReportWithGemini(extractedText, ruleReport);
+  await saveDebugSegments(documents);
   const extracted = {
     authority: normalizeAuthority(finalReport.identifiedData.authority),
     municipality: finalReport.identifiedData.municipality,
@@ -144,7 +119,7 @@ async function main() {
     (value) => !value,
   );
   const failurePoint = inferFailurePoint({
-    visionResult,
+    analysis,
     ruleReport,
     finalReport,
     comparisons,
@@ -187,12 +162,12 @@ async function main() {
             : "FULL_IMAGE",
       })),
     ),
-    visionAttempted: visionResult.attempted,
-    visionStatus: visionResult.status,
-    rawGeminiResponse: visionResult.debug?.rawResponse ?? null,
-    rawGeminiText: visionResult.debug?.rawOutput ?? "",
-    geminiJson: visionResult.debug?.parsedOutput ?? null,
-    renderedVisionText: visionResult.text,
+    visionAttempted: analysis.processing.vision.attempted,
+    visionStatus: analysis.processing.vision.status,
+    rawGeminiResponse: analysis.diagnostics.visionDebug?.rawResponse ?? null,
+    rawGeminiText: analysis.diagnostics.visionDebug?.rawOutput ?? "",
+    geminiJson: analysis.diagnostics.visionDebug?.parsedOutput ?? null,
+    renderedVisionText: analysis.diagnostics.visionDebug?.rawOutput ?? "",
     parserOutput: documents.map((document) => ({
       filename: document.filename,
       text: document.text,
@@ -229,9 +204,9 @@ async function main() {
 
   console.log("Golden Bologna diagnostic");
   console.log(`Provider usato: ${providerLog.geminiVision ? "gemini vision" : "fallback"}`);
-  console.log(`visionAttempted: ${visionResult.attempted}`);
-  console.log(`visionStatus: ${visionResult.status}`);
-  console.log(`Modello: ${visionResult.model}`);
+  console.log(`visionAttempted: ${analysis.processing.vision.attempted}`);
+  console.log(`visionStatus: ${analysis.processing.vision.status}`);
+  console.log(`Modello: ${analysis.processing.vision.model}`);
   console.log(
     `Long receipt: ${
       documents[0]?.analysis.imagePreprocessing?.layout === "LONG_RECEIPT_IMAGE"
@@ -242,7 +217,7 @@ async function main() {
   );
   console.log(`Preview segmenti: ${debugSegmentsDir}`);
   console.log("JSON Gemini:");
-  console.log(JSON.stringify(visionResult.debug?.parsedOutput ?? null, null, 2));
+  console.log(JSON.stringify(analysis.diagnostics.visionDebug?.parsedOutput ?? null, null, 2));
   console.log("Dati estratti finali:");
   console.log(JSON.stringify(extracted, null, 2));
   console.log(`Accuracy diagnostica: ${accuracy}%`);
@@ -253,25 +228,6 @@ async function main() {
     process.exit(1);
   }
   process.exit(0);
-}
-
-function shouldUseOcrRecovery(
-  visionText: string,
-  documents: Awaited<ReturnType<typeof extractDocuments>>,
-) {
-  if (!documents.some((document) => document.visionImages.length > 0)) {
-    return false;
-  }
-
-  const usefulSignals = [
-    /verbale\s+n/i,
-    /\btarga\b/i,
-    /\bart\.?\s*\d/i,
-    /\b(?:€|Euro)\s*\d/i,
-    /data\s+(?:violazione|infrazione)|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/i,
-  ].filter((pattern) => pattern.test(visionText)).length;
-
-  return usefulSignals < 3;
 }
 
 async function loadLocalEnv() {
@@ -290,16 +246,16 @@ async function loadLocalEnv() {
 }
 
 function inferFailurePoint(input: {
-  visionResult: Awaited<ReturnType<typeof analyzeImagesWithGeminiVision>>;
-  ruleReport: ReturnType<typeof analyzeFineText>;
-  finalReport: Awaited<ReturnType<typeof enhanceReportWithGemini>>;
+  analysis: AnalyzeUploadedDocumentsResult;
+  ruleReport: AnalyzeUploadedDocumentsResult["diagnostics"]["ruleReport"];
+  finalReport: AnalyzeUploadedDocumentsResult["report"];
   comparisons: Record<string, boolean>;
   accuracy: number;
   hasCriticalFailure: boolean;
 }) {
-  if (!input.visionResult.attempted) return "VISION_NOT_ATTEMPTED";
-  if (!input.visionResult.available) return "GEMINI_VISION_FAILED";
-  const parsed = input.visionResult.debug?.parsedOutput;
+  if (!input.analysis.processing.vision.attempted) return "VISION_NOT_ATTEMPTED";
+  if (!input.analysis.processing.vision.available) return "GEMINI_VISION_FAILED";
+  const parsed = input.analysis.diagnostics.visionDebug?.parsedOutput;
   if (parsed) {
     const visionRate = getVisionExtractionRate(parsed);
     if (
@@ -330,9 +286,7 @@ function inferFailurePoint(input: {
 }
 
 function getUsefulVisionFieldCount(
-  parsed: NonNullable<
-    Awaited<ReturnType<typeof analyzeImagesWithGeminiVision>>["debug"]
-  >["parsedOutput"],
+  parsed: NonNullable<AnalyzeUploadedDocumentsResult["diagnostics"]["visionDebug"]>["parsedOutput"],
 ) {
   const usefulGeminiFields = [
     parsed.noticeNumber,
@@ -352,15 +306,13 @@ function getUsefulVisionFieldCount(
 }
 
 function getVisionExtractionRate(
-  parsed: NonNullable<
-    Awaited<ReturnType<typeof analyzeImagesWithGeminiVision>>["debug"]
-  >["parsedOutput"],
+  parsed: NonNullable<AnalyzeUploadedDocumentsResult["diagnostics"]["visionDebug"]>["parsedOutput"],
 ) {
   return getUsefulVisionFieldCount(parsed) / 10;
 }
 
 async function saveDebugSegments(
-  documents: Awaited<ReturnType<typeof extractDocuments>>,
+  documents: AnalyzeUploadedDocumentsResult["diagnostics"]["documents"],
 ) {
   await rm(debugSegmentsDir, { recursive: true, force: true });
   await mkdir(debugSegmentsDir, { recursive: true });
