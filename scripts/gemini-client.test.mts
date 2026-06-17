@@ -139,52 +139,13 @@ test("Gemini Vision invia immagini originali come inlineData", async (context) =
               parts: [
                 {
                   text: JSON.stringify({
-                    structuredData: {
-                      authority: "Polizia Locale",
-                      municipality: "Bologna",
-                      noticeNumber: "AV-1",
-                      plate: "AB123CD",
-                      articleCode: "142",
-                      paragraph: "9",
-                      amount: "Non rilevato nel documento caricato",
-                      reducedAmount: "Non rilevato nel documento caricato",
-                      points: "Non rilevato nel documento caricato",
-                      violationType: "Eccesso velocità",
-                      classification: "Autovelox / Eccesso di velocità",
-                      deadlines: {
-                        prefetto: "60 giorni",
-                        giudiceDiPace: "30 giorni",
-                      },
-                      confidence: {
-                        authority: "Media",
-                        municipality: "Media",
-                        noticeNumber: "Media",
-                        plate: "Media",
-                        articleCode: "Alta",
-                        paragraph: "Alta",
-                        amount: "Non rilevato",
-                        reducedAmount: "Non rilevato",
-                        points: "Non rilevato",
-                        violationType: "Media",
-                        classification: "Media",
-                      },
-                    },
-                    pages: [
-                      {
-                        filename: "verbale.jpg",
-                        pageType: "MAIN_VERBALE",
-                        evidence: "Art. 142 comma 9",
-                      },
-                    ],
-                    extractedData: [
-                      {
-                        key: "article",
-                        value: "142",
-                        confidence: "Alta",
-                        evidence: "Art. 142 comma 9",
-                      },
-                    ],
-                    summary: "Verbale letto da immagine.",
+                    municipality: "Bologna",
+                    plate: "AB123CD",
+                    articleCode: "142",
+                    paragraph: "9",
+                    amount: "173,00",
+                    points: "3",
+                    classification: "Autovelox / Eccesso di velocità",
                   }),
                 },
               ],
@@ -213,7 +174,8 @@ test("Gemini Vision invia immagini originali come inlineData", async (context) =
     assert.equal(inlineParts?.length, 1);
     assert.equal(inlineParts?.[0]?.inlineData?.mimeType, "image/jpeg");
     assert.equal(inlineParts?.[0]?.inlineData?.data, "YWJj");
-    assert.match(result.text, /GEMINI VISION STRUCTURED EXTRACTION/);
+    assert.match(result.text, /ESTRAZIONE STRUTTURATA DA IMMAGINI/);
+    assert.match(result.text, /Art\. 142 comma 9/);
   } finally {
     if (previousKey) {
       process.env.GEMINI_API_KEY = previousKey;

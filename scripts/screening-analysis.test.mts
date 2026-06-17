@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { jsPDF } from "jspdf";
+import { analyzeImagesWithGeminiVision } from "../src/lib/ai/geminiClient.ts";
 import { extractDocuments } from "../src/lib/documents/extractText.ts";
 import { analyzeFineText } from "../src/lib/rules/fineAnalysisRules.ts";
 import {
@@ -386,6 +387,107 @@ test("golden-milano-autovelox-images.test", async () => {
     2,
   );
   assertPrudentLanguage(report);
+});
+
+test("end-to-end-milano-images-uses-gemini-vision-pipeline.test", async (context) => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "test-key";
+  let inlineImageCount = 0;
+  context.mock.method(globalThis, "fetch", async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      contents?: Array<{
+        parts?: Array<{ inlineData?: unknown }>;
+      }>;
+    };
+    inlineImageCount =
+      body.contents?.[0]?.parts?.filter((part) => part.inlineData).length ?? 0;
+
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    municipality: "Milano",
+                    plate: "GE264ZJ",
+                    articleCode: "142",
+                    paragraph: "9",
+                    amount: "740,32",
+                    points: "6",
+                    classification: "Autovelox / Eccesso di velocità",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+
+  try {
+    const imagePaths = [
+      "/Users/giovannirizzi/Downloads/IMG_6357.JPG",
+      "/Users/giovannirizzi/Downloads/IMG_6358.JPG",
+      "/Users/giovannirizzi/Downloads/IMG_6359.JPG",
+      "/Users/giovannirizzi/Downloads/IMG_6360.JPG",
+    ];
+    const files = await Promise.all(
+      imagePaths.map(async (imagePath) => {
+        await access(imagePath);
+        const buffer = await readFile(imagePath);
+        return new File([buffer], imagePath.split("/").at(-1), {
+          type: "image/jpeg",
+        });
+      }),
+    );
+    const documents = await extractDocuments(files);
+    const visionImages = documents.flatMap((document) => document.visionImages);
+    const visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    const ocrText = documents
+      .map(
+        (document, index) =>
+          `-- ${index + 1} of ${documents.length} --\nDOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
+      )
+      .join("\n\n---\n\n");
+    const extractedText = [
+      visionResult.text &&
+        `DOCUMENTO: Analisi immagini\nMETODO: Analisi immagini\n${visionResult.text}`,
+      ocrText,
+    ]
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+    const report = analyze(extractedText);
+    const visibleText = visibleReportText(report);
+
+    assert.equal(visionResult.available, true);
+    assert.equal(visionResult.status, "Completata");
+    assert.equal(inlineImageCount, 4);
+    assert.match(visionResult.text, /ESTRAZIONE STRUTTURATA DA IMMAGINI/);
+    assert.equal(field(report, "municipality").value, "Milano");
+    assert.equal(field(report, "plate").value, "GE264ZJ");
+    assert.equal(report.normalizedData.articleCode, "142");
+    assert.equal(report.normalizedData.paragraph, "9");
+    assert.equal(report.normalizedData.points, 6);
+    assert.equal(field(report, "amount").value, "€740,32");
+    assert.equal(
+      report.violationClassification.value,
+      "Autovelox / Eccesso di velocità",
+    );
+    assert.doesNotMatch(
+      visibleText,
+      /Gemini|OCR|provider|fallback|motore di regole|ESTRAZIONE STRUTTURATA/i,
+    );
+  } finally {
+    if (previousKey) {
+      process.env.GEMINI_API_KEY = previousKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  }
 });
 
 test("il flusso utente non mostra termini tecnici nel consenso e nel riepilogo", async () => {

@@ -78,41 +78,13 @@ type GeminiVisionImage = {
 };
 
 type GeminiVisionOutput = {
-  structuredData: {
-    authority: string;
-    municipality: string;
-    noticeNumber: string;
-    plate: string;
-    articleCode: string;
-    paragraph: string;
-    amount: string;
-    reducedAmount: string;
-    points: string;
-    violationType: string;
-    classification: string;
-    deadlines: {
-      prefetto: string;
-      giudiceDiPace: string;
-    };
-    confidence: Record<string, FieldConfidence>;
-  };
-  pages: Array<{
-    filename: string;
-    pageType:
-      | "MAIN_VERBALE"
-      | "PAYMENT_NOTICE"
-      | "RECOURSE_INFORMATION"
-      | "DRIVER_DATA_FORM"
-      | "OTHER";
-    evidence: string;
-  }>;
-  extractedData: Array<{
-    key: GeminiExtractedField["key"];
-    value: string;
-    confidence: FieldConfidence;
-    evidence: string;
-  }>;
-  summary: string;
+  municipality: string;
+  plate: string;
+  articleCode: string;
+  paragraph: string;
+  amount: string;
+  points: string;
+  classification: string;
 };
 
 export async function analyzeImagesWithGeminiVision(
@@ -176,9 +148,8 @@ export async function analyzeImagesWithGeminiVision(
         ],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 4_096,
+          maxOutputTokens: 1_024,
           responseMimeType: "application/json",
-          responseSchema: visionResponseSchema,
         },
       }),
     });
@@ -502,17 +473,25 @@ ${extractedText.slice(0, 14_000)}
 function buildVisionPrompt(images: GeminiVisionImage[]) {
   return `
 Analizza le immagini originali di un verbale italiano del Codice della Strada.
-Restituisci esclusivamente JSON conforme allo schema.
+Restituisci esclusivamente JSON valido. Non usare Markdown. Non aggiungere testo fuori dal JSON.
 
 REGOLE:
 - usa solo ciò che vedi nelle immagini;
 - non inventare dati mancanti;
 - se un dato non è leggibile usa "${NOT_DETECTED}";
-- compila structuredData con i campi authority, municipality, noticeNumber, plate, articleCode, paragraph, amount, reducedAmount, points, violationType, classification, deadlines, confidence;
-- duplica i dati utili anche in extractedData per compatibilità con il motore regole;
-- classifica ogni immagine/pagina come MAIN_VERBALE, PAYMENT_NOTICE, RECOURSE_INFORMATION, DRIVER_DATA_FORM oppure OTHER;
-- estrai soprattutto: ente, comune, numero verbale, targa, data verbale, articolo CdS, comma, tipo violazione, velocità rilevata, limite, punti patente, importi, presenza modulo comunicazione dati conducente;
-- per ogni dato indica evidence testuale breve.
+- estrai solo i campi del benchmark;
+- usa stringhe brevi.
+
+FORMATO ATTESO:
+{
+  "municipality": "Milano",
+  "plate": "GE264ZJ",
+  "articleCode": "142",
+  "paragraph": "9",
+  "amount": "740,32",
+  "points": "6",
+  "classification": "Autovelox / Eccesso di velocità"
+}
 
 IMMAGINI INVIATE:
 ${images.map((image, index) => `${index + 1}. ${image.filename} (${image.mimeType})`).join("\n")}
@@ -546,56 +525,68 @@ function parseGeminiVisionOutput(value?: string): GeminiVisionOutput | null {
     const parsed = JSON.parse(value) as GeminiVisionOutput;
     if (
       !parsed ||
-      !parsed.structuredData ||
-      !Array.isArray(parsed.pages) ||
-      !Array.isArray(parsed.extractedData) ||
-      typeof parsed.summary !== "string"
+      typeof parsed.municipality !== "string" ||
+      typeof parsed.plate !== "string" ||
+      typeof parsed.articleCode !== "string" ||
+      typeof parsed.paragraph !== "string" ||
+      typeof parsed.amount !== "string" ||
+      typeof parsed.points !== "string" ||
+      typeof parsed.classification !== "string"
     ) {
       return null;
     }
     return parsed;
   } catch {
-    return null;
+    return parsePartialGeminiVisionOutput(value);
   }
 }
 
 function renderVisionOutput(output: GeminiVisionOutput) {
-  const structuredLines = [
-    `authority: ${output.structuredData.authority}`,
-    `municipality: ${output.structuredData.municipality}`,
-    `noticeNumber: ${output.structuredData.noticeNumber}`,
-    `plate: ${output.structuredData.plate}`,
-    `articleCode: ${output.structuredData.articleCode}`,
-    `paragraph: ${output.structuredData.paragraph}`,
-    `amount: ${output.structuredData.amount}`,
-    `reducedAmount: ${output.structuredData.reducedAmount}`,
-    `points: ${output.structuredData.points}`,
-    `violationType: ${output.structuredData.violationType}`,
-    `classification: ${output.structuredData.classification}`,
-    `prefettoDeadline: ${output.structuredData.deadlines.prefetto}`,
-    `giudiceDiPaceDeadline: ${output.structuredData.deadlines.giudiceDiPace}`,
-  ].join("\n");
-  const fieldLines = output.extractedData
-    .filter((field) => field.value && !missingValues.has(field.value))
-    .map((field) => `${field.key}: ${field.value}\nEvidence: ${field.evidence}`)
-    .join("\n");
-  const pageLines = output.pages
-    .map(
-      (page, index) =>
-        `Pagina Vision ${index + 1}: ${page.filename}\nTipo pagina: ${page.pageType}\n${page.evidence}`,
-    )
-    .join("\n\n");
-
   return `
-GEMINI VISION STRUCTURED EXTRACTION
-${output.summary}
-
-${structuredLines}
-
-${fieldLines}
-
-${pageLines}
+ESTRAZIONE STRUTTURATA DA IMMAGINI
+Comune: ${output.municipality}
+Targa: ${output.plate}
+Art. ${output.articleCode} comma ${output.paragraph} Codice della Strada
+Importo Euro ${output.amount}
+Punti patente: ${output.points}
+Tipo violazione: ${output.classification}
 `.trim();
+}
+
+function parsePartialGeminiVisionOutput(value: string): GeminiVisionOutput | null {
+  const output = {
+    municipality: extractJsonString(value, "municipality"),
+    plate: extractJsonString(value, "plate"),
+    articleCode: extractJsonString(value, "articleCode"),
+    paragraph: extractJsonString(value, "paragraph"),
+    amount: extractJsonString(value, "amount"),
+    points: extractJsonString(value, "points"),
+    classification: extractJsonString(value, "classification"),
+  };
+
+  if (
+    output.municipality &&
+    output.plate &&
+    output.articleCode &&
+    output.paragraph &&
+    output.amount &&
+    output.points
+  ) {
+    return {
+      ...output,
+      classification: output.classification || NOT_DETECTED,
+    };
+  }
+
+  return null;
+}
+
+function extractJsonString(value: string, key: keyof GeminiVisionOutput) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = value.match(
+    new RegExp(`"${escapedKey}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`),
+  );
+  return match?.[1]?.replace(/\\"/g, "\"").trim() ?? "";
 }
 
 function isGroundedField(field: GeminiExtractedField, source: string) {
@@ -808,114 +799,4 @@ const screeningResponseSchema = {
     "finalRecommendation",
     "disclaimer",
   ],
-};
-
-const visionResponseSchema = {
-  type: "object",
-  properties: {
-    structuredData: {
-      type: "object",
-      properties: {
-        authority: { type: "string" },
-        municipality: { type: "string" },
-        noticeNumber: { type: "string" },
-        plate: { type: "string" },
-        articleCode: { type: "string" },
-        paragraph: { type: "string" },
-        amount: { type: "string" },
-        reducedAmount: { type: "string" },
-        points: { type: "string" },
-        violationType: { type: "string" },
-        classification: { type: "string" },
-        deadlines: {
-          type: "object",
-          properties: {
-            prefetto: { type: "string" },
-            giudiceDiPace: { type: "string" },
-          },
-          required: ["prefetto", "giudiceDiPace"],
-        },
-        confidence: {
-          type: "object",
-          properties: {
-            authority: { type: "string", enum: confidenceEnum },
-            municipality: { type: "string", enum: confidenceEnum },
-            noticeNumber: { type: "string", enum: confidenceEnum },
-            plate: { type: "string", enum: confidenceEnum },
-            articleCode: { type: "string", enum: confidenceEnum },
-            paragraph: { type: "string", enum: confidenceEnum },
-            amount: { type: "string", enum: confidenceEnum },
-            reducedAmount: { type: "string", enum: confidenceEnum },
-            points: { type: "string", enum: confidenceEnum },
-            violationType: { type: "string", enum: confidenceEnum },
-            classification: { type: "string", enum: confidenceEnum },
-          },
-          required: [
-            "authority",
-            "municipality",
-            "noticeNumber",
-            "plate",
-            "articleCode",
-            "paragraph",
-            "amount",
-            "reducedAmount",
-            "points",
-            "violationType",
-            "classification",
-          ],
-        },
-      },
-      required: [
-        "authority",
-        "municipality",
-        "noticeNumber",
-        "plate",
-        "articleCode",
-        "paragraph",
-        "amount",
-        "reducedAmount",
-        "points",
-        "violationType",
-        "classification",
-        "deadlines",
-        "confidence",
-      ],
-    },
-    pages: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          filename: { type: "string" },
-          pageType: {
-            type: "string",
-            enum: [
-              "MAIN_VERBALE",
-              "PAYMENT_NOTICE",
-              "RECOURSE_INFORMATION",
-              "DRIVER_DATA_FORM",
-              "OTHER",
-            ],
-          },
-          evidence: { type: "string" },
-        },
-        required: ["filename", "pageType", "evidence"],
-      },
-    },
-    extractedData: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          key: { type: "string", enum: extractedKeys },
-          value: { type: "string" },
-          confidence: { type: "string", enum: confidenceEnum },
-          evidence: { type: "string" },
-        },
-        required: ["key", "value", "confidence", "evidence"],
-      },
-    },
-    summary: { type: "string" },
-  },
-  required: ["structuredData", "pages", "extractedData", "summary"],
 };

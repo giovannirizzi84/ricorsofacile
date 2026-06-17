@@ -37,6 +37,20 @@ export async function POST(request: Request) {
     const documents = await extractDocuments(files);
     const visionImages = documents.flatMap((document) => document.visionImages);
     const visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    const providerLog = {
+      parser: documents.some((document) => document.method === "Testo PDF"),
+      geminiVision: visionResult.available,
+      fallback: !visionResult.available,
+      visionAttempted: visionResult.attempted,
+      visionStatus: visionResult.status,
+      documents: documents.map((document) => ({
+        filename: document.filename,
+        type: document.analysis.type,
+        textExtraction: document.analysis.textExtraction,
+        visionImages: document.visionImages.length,
+      })),
+    };
+    console.info("Document analysis providers", providerLog);
     const ocrText = documents
       .map(
         (document, index) =>
@@ -85,6 +99,7 @@ export async function POST(request: Request) {
           model: visionResult.model,
           status: visionResult.status,
         },
+        providerLog,
         rulesEngineUsed: report.rulesEngineUsed,
         aiExecution: report.aiExecution,
       },
