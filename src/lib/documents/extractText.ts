@@ -6,6 +6,7 @@ import { createWorker, OEM, type Worker } from "tesseract.js";
 
 const minimumNativePdfText = 120;
 const maxOcrPdfPages = 5;
+const ocrTimeoutMs = 75_000;
 
 PDFParse.setWorker(pathToFileURL(getPdfWorkerPath()).href);
 
@@ -23,7 +24,11 @@ export async function extractDocuments(files: File[]) {
 
   async function recognize(buffer: Buffer) {
     workerState.current ??= await createItalianWorker();
-    const result = await workerState.current.recognize(buffer);
+    const result = await withTimeout(
+      workerState.current.recognize(buffer),
+      ocrTimeoutMs,
+      "OCR_TIMEOUT",
+    );
     return normalizeText(result.data.text);
   }
 
@@ -129,4 +134,18 @@ function normalizeText(text: string) {
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, code: string) {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(code);
+        error.name = code;
+        reject(error);
+      }, ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }

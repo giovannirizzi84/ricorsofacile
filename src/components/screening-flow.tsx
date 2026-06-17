@@ -46,6 +46,11 @@ type CaseData = {
   violationType: string;
 };
 
+type AnalyzePayload = {
+  report?: ScreeningReport;
+  error?: string;
+};
+
 const initialCaseData: CaseData = {
   notificationDate: "",
   authority: "",
@@ -78,11 +83,19 @@ export function ScreeningFlow() {
   }
 
   async function analyze() {
-    if (!privacyAccepted || !disclaimerAccepted || files.length === 0) return;
+    if (
+      processing ||
+      !privacyAccepted ||
+      !disclaimerAccepted ||
+      files.length === 0
+    ) {
+      return;
+    }
 
     setError("");
     setProcessing(true);
     setProcessingStage("Analisi del documento in corso…");
+    const controller = new AbortController();
     const stageTimers = [
       window.setTimeout(
         () => setProcessingStage("Lettura delle informazioni principali…"),
@@ -96,6 +109,14 @@ export function ScreeningFlow() {
         () => setProcessingStage("Generazione report…"),
         7500,
       ),
+      window.setTimeout(
+        () =>
+          setProcessingStage(
+            "Il documento è complesso: stiamo ancora completando l’analisi…",
+          ),
+        30000,
+      ),
+      window.setTimeout(() => controller.abort(), 120000),
     ];
 
     try {
@@ -108,11 +129,9 @@ export function ScreeningFlow() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         body,
+        signal: controller.signal,
       });
-      const payload = (await response.json()) as {
-        report?: ScreeningReport;
-        error?: string;
-      };
+      const payload = await readAnalyzePayload(response);
 
       if (!response.ok || !payload.report) {
         throw new Error(payload.error || "Analisi non completata.");
@@ -123,13 +142,37 @@ export function ScreeningFlow() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (analysisError) {
       setError(
-        analysisError instanceof Error
-          ? analysisError.message
-          : "Non è stato possibile completare l'analisi.",
+        analysisError instanceof DOMException &&
+          analysisError.name === "AbortError"
+          ? "L'analisi sta impiegando troppo tempo. Prova a caricare un'immagine più nitida e ritagliata sul verbale, oppure un PDF."
+          : analysisError instanceof Error
+            ? analysisError.message
+            : "Non è stato possibile completare l'analisi.",
       );
     } finally {
       stageTimers.forEach((timer) => window.clearTimeout(timer));
       setProcessing(false);
+    }
+  }
+
+  async function readAnalyzePayload(response: Response): Promise<AnalyzePayload> {
+    const raw = await response.text();
+    if (!raw.trim()) {
+      return {
+        error:
+          "Il server non ha restituito una risposta valida. Riprova tra poco o carica un file più leggero.",
+      };
+    }
+
+    try {
+      return JSON.parse(raw) as AnalyzePayload;
+    } catch {
+      return {
+        error:
+          response.ok
+            ? "La risposta dell'analisi non è leggibile. Riprova con un file più nitido."
+            : "Il server ha interrotto l'analisi. Riprova con un file più nitido o in formato PDF.",
+      };
     }
   }
 

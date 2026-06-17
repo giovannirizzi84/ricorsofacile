@@ -70,6 +70,16 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Local screening analysis failed", error);
+    if (error instanceof Error && error.name === "OCR_TIMEOUT") {
+      return NextResponse.json(
+        {
+          error:
+            "L'OCR sta impiegando troppo tempo su questo documento. Prova a caricare una foto più nitida, ritagliata sul verbale, oppure un PDF.",
+        },
+        { status: 504 },
+      );
+    }
+
     return NextResponse.json(
       {
         error:
