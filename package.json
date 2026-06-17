@@ -12,7 +12,8 @@
     "lint": "eslint",
     "test": "npm run test:screening",
     "test:screening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types scripts/*.test.mts",
-    "test:vision": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/gemini-vision-live-test.mts"
+    "test:vision": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/gemini-vision-live-test.mts",
+    "evaluate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-dataset.mts"
   },
   "dependencies": {
     "@tesseract.js-data/ita": "^1.0.0",
