@@ -377,3 +377,41 @@ test("incomplete-document.test", () => {
     "Nessun pacchetto individuabile prima di integrare i dati mancanti.",
   );
 });
+
+test("image-ocr-bologna-parking-amounts.test", () => {
+  const report = analyze(`
+    Corpo di Polizia Locale
+    Polizia Comune di Bologna VERBALE DI ACCERTAMENTO
+    VERBALE N. 2024 / 0123456 / A
+    Data dell'infrazione: 15/05/2024
+    ora: 1:42
+    Luogo dell'infrazione: Via Rizzoli, 26
+    40125 Bologna (BO)
+    articoli violati: Art. 7comma 1 lett. a)
+    Art. 157 comma 6
+    C.d.S.
+    Targa:
+    AB123CD
+    Il veicolo sottodescritto ha effettuato la sosta del veicolo in zona
+    ove è vietata la sosta, in corrispondenza di attraversamento pedonale.
+    IMPORTO DELLA SANZIONE
+    Entro 5 giorni dalla notifica del presente verbale è ammesso il
+    pagamento in misura ridotta pari a:
+    € 41 .30 (trentuno/30)
+    Itre 5 giorni dalla notifica e fino a 60 giorni è dovuto il pagamento
+    in misura piena pari a:
+    € 59,00
+    Causale: Pagamento verbale n. 2024/0123456/A
+  `);
+
+  assertField(report, "municipality", "Bologna");
+  assertField(report, "authority", "Comune Di Bologna - Polizia Locale");
+  assertField(report, "reportNumber", "2024/0123456/A");
+  assertField(report, "plate", "AB123CD");
+  assertField(report, "place", "Via Rizzoli");
+  assertField(report, "article", "Art. 7 Codice della Strada");
+  assertField(report, "paragraph", "Comma 1");
+  assertField(report, "amount", "€59,00");
+  assertField(report, "reducedAmount", "€41,30");
+  assert.equal(report.violationClassification.value, "divieto di sosta");
+});

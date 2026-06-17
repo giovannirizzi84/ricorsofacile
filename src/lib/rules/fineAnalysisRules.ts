@@ -271,18 +271,24 @@ function extractFacts(
     .toUpperCase()
     .match(/\b[A-Z]{2}\s?\d{3}\s?[A-Z]{2}\b/)?.[0]
     ?.replace(/\s/g, "");
-  const ordinaryAmount = matchAmount(
-    text,
-    /dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno[\s\S]{0,260}?totale\s+di\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
-  ) ?? findPaymentAmount(paymentText, "standard");
+  const ordinaryAmount =
+    matchAmount(
+      text,
+      /dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno[\s\S]{0,260}?totale\s+di\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
+    ) ??
+    findContextualMoneyAmount(
+      text,
+      /(?:(?:oltre|[il]tre)\s+(?:cinque|5)\s+giorni|dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno)/i,
+    ) ??
+    findPaymentAmount(paymentText, "standard");
   const labelledAmount = matchAmount(
     text,
-    /(?:sanzione|importo|somma\s+di|pagamento|totale)[^\d€]{0,35}(?:(?:€|Euro)\s*)?(\d{1,5}(?:[.,]\d{2})?)/i,
+    /(?:sanzione|importo|somma\s+di|pagamento|totale)[^\n€]{0,80}(?:(?:€|Euro)\s*)(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i,
   );
   const amount = rejectInvalidAmount(
     ordinaryAmount ?? labelledAmount ?? matchAmount(
     text,
-    /(?:€|Euro)\s*(\d{1,5}(?:[.,]\d{2})?)/i,
+    /(?:€|Euro)\s*(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i,
     ),
   );
   const reducedAmount =
@@ -290,6 +296,10 @@ function extractFacts(
       text,
       /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%|misura\s+ridotta)[\s\S]{0,220}?totale\s+di\s+Euro\s+(\d{1,5}(?:[.,]\d{2})?)/i,
     )) ??
+    findContextualMoneyAmount(
+      text,
+      /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%)/i,
+    ) ??
     findPaymentAmount(paymentText, "reduced") ??
     rejectInvalidAmount(matchAmount(
       text,
@@ -311,11 +321,11 @@ function extractFacts(
   const municipality = rawMunicipality ? toTitleCase(rawMunicipality) : undefined;
   const authority = extractAuthority(text, municipality);
   const reportNumber = cleanExtractedValue(
-    text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9./-]{2,30})/i)?.[1] ??
+    text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i)?.[1] ??
       text.match(
-        /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9./-]{2,30})/i,
+        /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i,
       )?.[1],
-  );
+  )?.replace(/\s*\/\s*/g, "/");
   const registryNumber = cleanExtractedValue(
     text.match(/N\.?\s*Registro\s+([A-Z0-9./-]{3,40})/i)?.[1],
   );
@@ -455,7 +465,7 @@ function classifyViolation(
     return { value: "Autovelox / Eccesso di velocità", confidence: "Alta" };
   }
   if (
-    /divieto\s+di\s+sosta|sosta\s+(?:vietata|irregolare)|parcheggi|sostava[^\n]{0,50}(?:vietat|non\s+consentit)/.test(
+    /divieto\s+di\s+sosta|sosta\s+(?:vietata|irregolare)|vietata\s+la\s+sosta|parcheggi|sostava[^\n]{0,50}(?:vietat|non\s+consentit)/.test(
       value,
     )
   ) {
@@ -1485,7 +1495,7 @@ function extractContestedArticle(text: string) {
       /ha\s+violato\s+il\s+seguente\s+articolo:\s*(Art\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?[\s\S]{0,180})/i,
     )?.[1] ??
     text.match(
-      /\bArt\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?\s+comma\s+[0-9]+(?:[-\s]?(?:bis|ter|quater))?[^\n]{0,160}/i,
+      /\bArt\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?\s*comma\s+[0-9]+(?:[-\s]?(?:bis|ter|quater))?[^\n]{0,160}/i,
     )?.[0] ??
     text
       .split(/\n/)
@@ -1708,9 +1718,22 @@ function matchAmount(text: string, pattern: RegExp) {
   return normalizeAmount(text.match(pattern)?.[1]);
 }
 
+function findContextualMoneyAmount(text: string, contextPattern: RegExp) {
+  const match = contextPattern.exec(text);
+  if (!match || match.index === undefined) return undefined;
+
+  const context = text.slice(match.index, match.index + 420);
+  const moneyMatch =
+    context.match(/(?:€|Euro)\s*(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i) ??
+    context.match(/(\d{1,5}(?:\s*[.,]\s*\d{2})?)\s*(?:€|Euro)/i);
+
+  return rejectInvalidAmount(normalizeAmount(moneyMatch?.[1]));
+}
+
 function normalizeAmount(value?: string) {
   if (!value) return undefined;
-  const match = value.match(/\d{1,5}(?:[.,]\d{1,2})?/);
+  const compactValue = value.replace(/\s*([.,])\s*/g, "$1");
+  const match = compactValue.match(/\d{1,5}(?:[.,]\d{1,2})?/);
   if (!match) return undefined;
   const [integer, decimals = "00"] = match[0].replace(",", ".").split(".");
   return `${integer},${decimals.padEnd(2, "0").slice(0, 2)}`;
@@ -1739,6 +1762,9 @@ function cleanPlace(value?: string) {
   return cleanExtractedValue(
     value?.replace(
       /^(?:luogo(?:\s+(?:della\s+)?violazione)?|in\s+localit[aà])\s*[:\-]?\s*/i,
+      "",
+    )?.replace(
+      /^dell['’]infrazione\s*[:\-]?\s*/i,
       "",
     ),
   );
