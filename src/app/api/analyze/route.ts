@@ -34,21 +34,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const documents = await extractDocuments(files, {
+    let documents = await extractDocuments(files, {
       deferOcrForVision: true,
     });
     const visionImages = documents.flatMap((document) => document.visionImages);
     const visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    let ocrRecoveryUsed = false;
+
+    if (shouldUseOcrRecovery(visionResult.text, documents)) {
+      documents = await extractDocuments(files);
+      ocrRecoveryUsed = true;
+    }
+
     const providerLog = {
       parser: documents.some((document) => document.method === "Testo PDF"),
       geminiVision: visionResult.available,
-      fallback: !visionResult.available,
+      fallback: !visionResult.available || ocrRecoveryUsed,
+      ocrRecovery: ocrRecoveryUsed,
       visionAttempted: visionResult.attempted,
       visionStatus: visionResult.status,
       documents: documents.map((document) => ({
         filename: document.filename,
         type: document.analysis.type,
         textExtraction: document.analysis.textExtraction,
+        imagePreprocessing: document.analysis.imagePreprocessing,
         visionImages: document.visionImages.length,
       })),
     };
@@ -126,6 +135,25 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function shouldUseOcrRecovery(
+  visionText: string,
+  documents: Awaited<ReturnType<typeof extractDocuments>>,
+) {
+  if (!documents.some((document) => document.visionImages.length > 0)) {
+    return false;
+  }
+
+  const usefulSignals = [
+    /verbale\s+n/i,
+    /\btarga\b/i,
+    /\bart\.?\s*\d/i,
+    /\b(?:€|Euro)\s*\d/i,
+    /data\s+(?:violazione|infrazione)|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/i,
+  ].filter((pattern) => pattern.test(visionText)).length;
+
+  return usefulSignals < 3;
 }
 
 function validateFiles(files: File[]) {

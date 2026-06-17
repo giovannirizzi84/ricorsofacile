@@ -96,7 +96,7 @@ test("autovelox-speeding.test", () => {
 
   assertCommon(report, {
     municipality: "Rimini",
-    authority: "Comune Di Rimini - Polizia Locale",
+    authority: "Comune di Rimini - Polizia Locale",
     reportNumber: "AV-2026-001",
     plate: "AA123BB",
     violationDate: "14 gennaio 2026",
@@ -130,7 +130,7 @@ test("ztl-access.test", () => {
 
   assertCommon(report, {
     municipality: "Bologna",
-    authority: "Comune Di Bologna - Polizia Locale",
+    authority: "Comune di Bologna - Polizia Locale",
     reportNumber: "ZTL-7788",
     plate: "BB234CC",
     violationDate: "8 febbraio 2026",
@@ -189,7 +189,7 @@ test("red-light.test", () => {
 
   assertCommon(report, {
     municipality: "Padova",
-    authority: "Comune Di Padova - Polizia Locale",
+    authority: "Comune di Padova - Polizia Locale",
     reportNumber: "SR-6102",
     plate: "DD456EE",
     violationDate: "18 marzo 2026",
@@ -219,7 +219,7 @@ test("revision.test", () => {
 
   assertCommon(report, {
     municipality: "Torino",
-    authority: "Comune Di Torino - Polizia Locale",
+    authority: "Comune di Torino - Polizia Locale",
     reportNumber: "REV-3001",
     plate: "EE567FF",
     violationDate: "12 maggio 2026",
@@ -248,7 +248,7 @@ test("insurance.test", () => {
 
   assertCommon(report, {
     municipality: "Bari",
-    authority: "Comune Di Bari - Polizia Locale",
+    authority: "Comune di Bari - Polizia Locale",
     reportNumber: "RCA-9004",
     plate: "FF678GG",
     violationDate: "22 giugno 2026",
@@ -278,7 +278,7 @@ test("phone-driving.test", () => {
 
   assertCommon(report, {
     municipality: "Verona",
-    authority: "Comune Di Verona - Polizia Locale",
+    authority: "Comune di Verona - Polizia Locale",
     reportNumber: "TEL-1207",
     plate: "GG789HH",
     violationDate: "5 luglio 2026",
@@ -308,7 +308,7 @@ test("bus-lane.test", () => {
 
   assertCommon(report, {
     municipality: "Milano",
-    authority: "Comune Di Milano - Polizia Locale",
+    authority: "Comune di Milano - Polizia Locale",
     reportNumber: "BUS-7761",
     plate: "HH890II",
     violationDate: "29 agosto 2026",
@@ -337,7 +337,7 @@ test("driver-data.test", () => {
 
   assertCommon(report, {
     municipality: "Genova",
-    authority: "Comune Di Genova - Polizia Locale",
+    authority: "Comune di Genova - Polizia Locale",
     reportNumber: "DC-2210",
     plate: "II901LL",
     violationDate: "16 settembre 2026",
@@ -364,7 +364,7 @@ test("incomplete-document.test", () => {
   assertField(report, "reportNumber", "INC-0001");
   assertField(report, "violationDate", "3 ottobre 2026");
   assertField(report, "violationTime", "18:20");
-  assertField(report, "authority", "Comune Di Testville");
+  assertField(report, "authority", "Comune di Testville");
   assertField(report, "plate", NOT_DETECTED);
   assertField(report, "place", NOT_DETECTED);
   assertField(report, "amount", NOT_DETECTED);
@@ -405,7 +405,7 @@ test("image-ocr-bologna-parking-amounts.test", () => {
   `);
 
   assertField(report, "municipality", "Bologna");
-  assertField(report, "authority", "Comune Di Bologna - Polizia Locale");
+  assertField(report, "authority", "Comune di Bologna - Polizia Locale");
   assertField(report, "reportNumber", "2024/0123456/A");
   assertField(report, "plate", "AB123CD");
   assertField(report, "place", "Via Rizzoli");

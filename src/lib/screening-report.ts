@@ -15,6 +15,7 @@ export type ScreeningOutcome =
 export type ViolationClassification =
   | "ZTL / accesso area vietata"
   | "Autovelox / Eccesso di velocità"
+  | "Sosta / Rimozione"
   | "divieto di sosta"
   | "semaforo rosso"
   | "mancata revisione"

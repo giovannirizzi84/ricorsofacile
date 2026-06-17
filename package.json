@@ -13,6 +13,7 @@
     "test": "npm run test:screening",
     "test:screening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types scripts/*.test.mts",
     "test:vision": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/gemini-vision-live-test.mts",
+    "diagnose:bologna": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/golden-bologna-diagnostic.mts",
     "evaluate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-dataset.mts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@types/qrcode": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jpeg-js": "^0.4.4",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",

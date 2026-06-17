@@ -69,6 +69,7 @@ type GeminiResponse = {
       parts?: Array<{ text?: string }>;
     };
   }>;
+  usageMetadata?: Record<string, unknown>;
 };
 
 type GeminiVisionImage = {
@@ -78,13 +79,48 @@ type GeminiVisionImage = {
 };
 
 type GeminiVisionOutput = {
-  municipality: string;
-  plate: string;
-  articleCode: string;
-  paragraph: string;
-  amount: string;
-  points: string;
-  classification: string;
+  authority?: string;
+  municipality?: string;
+  noticeNumber?: string;
+  reportNumber?: string;
+  reportDate?: string;
+  violationDate?: string;
+  violationTime?: string;
+  place?: string;
+  plate?: string;
+  articles?: Array<{
+    articleCode?: string;
+    paragraph?: string;
+    amount?: string;
+    description?: string;
+  }>;
+  violations?: Array<{
+    articleCode?: string;
+    paragraph?: string;
+    amount?: string;
+    description?: string;
+    classification?: string;
+  }>;
+  primaryArticle?: string;
+  primaryClassification?: string;
+  articleCode?: string;
+  paragraph?: string;
+  amount?: string;
+  reducedAmount?: string;
+  totalAmount?: string;
+  points?: string;
+  classification?: string;
+  eventDescription?: string;
+  notes?: string;
+  additionalConsequence?: string;
+  appealNote?: string;
+};
+
+export type GeminiVisionDebug = {
+  endpoint: string;
+  rawOutput: string;
+  parsedOutput: GeminiVisionOutput;
+  rawResponse: GeminiResponse;
 };
 
 export async function analyzeImagesWithGeminiVision(
@@ -95,6 +131,7 @@ export async function analyzeImagesWithGeminiVision(
   model: string;
   text: string;
   status: "Completata" | "Chiave non configurata" | "Provider non disponibile" | "Risposta non valida";
+  debug?: GeminiVisionDebug;
 }> {
   const model = process.env.GEMINI_MODEL?.trim() || defaultModel;
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -192,6 +229,12 @@ export async function analyzeImagesWithGeminiVision(
       model,
       text: renderVisionOutput(output),
       status: "Completata",
+      debug: {
+        endpoint,
+        rawOutput: rawOutput ?? "",
+        parsedOutput: output,
+        rawResponse: payload,
+      },
     };
   } catch {
     return {
@@ -471,26 +514,79 @@ ${extractedText.slice(0, 14_000)}
 }
 
 function buildVisionPrompt(images: GeminiVisionImage[]) {
+  const hasLongReceiptSegments = images.some((image) =>
+    /segmento\s+\d+/i.test(image.filename),
+  );
   return `
 Analizza le immagini originali di un verbale italiano del Codice della Strada.
 Restituisci esclusivamente JSON valido. Non usare Markdown. Non aggiungere testo fuori dal JSON.
+
+${hasLongReceiptSegments ? `FORMATO DOCUMENTO:
+Il documento è una foto verticale molto lunga, simile a uno scontrino o avviso di accertamento.
+Le immagini includono il documento intero e segmenti verticali sovrapposti.
+Leggi attentamente tutte le sezioni dall'alto verso il basso. Non fermarti alla sola intestazione.
+Cerca numero verbale, data, ora, luogo, targa, articoli, importi singoli, totale e note finali.
+` : ""}
 
 REGOLE:
 - usa solo ciò che vedi nelle immagini;
 - non inventare dati mancanti;
 - se un dato non è leggibile usa "${NOT_DETECTED}";
-- estrai solo i campi del benchmark;
+- estrai anche articoli multipli, importi singoli e totale se presenti;
 - usa stringhe brevi.
 
 FORMATO ATTESO:
 {
-  "municipality": "Milano",
-  "plate": "GE264ZJ",
-  "articleCode": "142",
-  "paragraph": "9",
-  "amount": "740,32",
-  "points": "6",
-  "classification": "Autovelox / Eccesso di velocità"
+  "authority": "Comune di Bologna - Polizia Locale",
+  "municipality": "Bologna",
+  "noticeNumber": "635227-71",
+  "reportDate": "28/01/2026",
+  "violationDate": "28/01/2026",
+  "violationTime": "11:10",
+  "place": "Via del Borgo di S. Pietro",
+  "plate": "DZ923NZ",
+  "articles": [
+    {
+      "articleCode": "7",
+      "paragraph": "1",
+      "amount": "42,00",
+      "description": "sosta violando prescrizioni su tariffe orarie"
+    },
+    {
+      "articleCode": "158",
+      "paragraph": "2",
+      "amount": "42,00",
+      "description": "zona a traffico limitato priva di autorizzazione"
+    }
+  ],
+  "violations": [
+    {
+      "articleCode": "7",
+      "paragraph": "",
+      "description": "Sostava violando le prescrizioni su tariffe orarie",
+      "amount": "42,00",
+      "classification": "Sosta / tariffa non pagata"
+    },
+    {
+      "articleCode": "158",
+      "paragraph": "",
+      "description": "Sostava in zona a traffico limitato priva di autorizzazione",
+      "amount": "42,00",
+      "classification": "Sosta in ZTL / rimozione"
+    }
+  ],
+  "primaryArticle": "7/158",
+  "primaryClassification": "Sosta / Rimozione",
+  "articleCode": "7",
+  "paragraph": "1",
+  "amount": "93,60",
+  "totalAmount": "93,60",
+  "points": "${NOT_DETECTED}",
+  "classification": "Sosta / Rimozione",
+  "eventDescription": "Sosta in area soggetta a tariffa e zona a traffico limitato, con applicazione della rimozione del veicolo.",
+  "notes": "Non espone contrassegni",
+  "additionalConsequence": "Rimozione del veicolo",
+  "appealNote": "L'eventuale ricorso potrà essere proposto solo dopo la notifica del verbale."
 }
 
 IMMAGINI INVIATE:
@@ -523,65 +619,133 @@ function parseGeminiVisionOutput(value?: string): GeminiVisionOutput | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as GeminiVisionOutput;
-    if (
-      !parsed ||
-      typeof parsed.municipality !== "string" ||
-      typeof parsed.plate !== "string" ||
-      typeof parsed.articleCode !== "string" ||
-      typeof parsed.paragraph !== "string" ||
-      typeof parsed.amount !== "string" ||
-      typeof parsed.points !== "string" ||
-      typeof parsed.classification !== "string"
-    ) {
-      return null;
-    }
-    return parsed;
+    return normalizeVisionOutput(parsed);
   } catch {
     return parsePartialGeminiVisionOutput(value);
   }
 }
 
 function renderVisionOutput(output: GeminiVisionOutput) {
+  const articles = output.violations?.length
+    ? output.violations
+    : output.articles?.length
+      ? output.articles
+    : [
+        {
+          articleCode: output.articleCode,
+          paragraph: output.paragraph,
+          amount: output.amount,
+        },
+      ];
+  const articleLines = articles
+    .filter((article) => article.articleCode)
+    .map((article) => {
+      const paragraph = article.paragraph ? ` comma ${article.paragraph}` : "";
+      const amount = article.amount ? ` - Sanzione Euro ${article.amount}` : "";
+      const description = article.description ? ` - ${article.description}` : "";
+      const classification = "classification" in article && article.classification
+        ? ` - Tipo: ${article.classification}`
+        : "";
+      return `Art. ${article.articleCode}${paragraph} Codice della Strada${amount}${description}${classification}`;
+    });
+
   return `
 ESTRAZIONE STRUTTURATA DA IMMAGINI
-Comune: ${output.municipality}
-Targa: ${output.plate}
-Art. ${output.articleCode} comma ${output.paragraph} Codice della Strada
-Importo Euro ${output.amount}
-Punti patente: ${output.points}
-Tipo violazione: ${output.classification}
+${output.authority ? `Ente accertatore: ${output.authority}` : ""}
+${output.municipality ? `Comune: ${output.municipality}` : ""}
+${output.noticeNumber ?? output.reportNumber ? `Verbale n. ${output.noticeNumber ?? output.reportNumber}` : ""}
+${output.reportDate ? `Data verbale: ${output.reportDate}` : ""}
+${output.violationDate ? `Data violazione: ${output.violationDate}${output.violationTime ? ` ore ${output.violationTime}` : ""}` : ""}
+${output.place ? `Luogo della violazione: ${output.place}` : ""}
+${output.plate ? `Targa: ${output.plate}` : ""}
+${output.totalAmount ?? output.amount ? `Totale Euro ${output.totalAmount ?? output.amount}` : ""}
+${articleLines.join("\n")}
+${output.reducedAmount ? `Importo ridotto Euro ${output.reducedAmount}` : ""}
+${output.points ? `Punti patente: ${output.points}` : ""}
+${output.primaryArticle ? `Articolo principale: ${output.primaryArticle}` : ""}
+${output.primaryClassification ?? output.classification ? `Tipo violazione: ${output.primaryClassification ?? output.classification}` : ""}
+${output.eventDescription ? `Descrizione: ${output.eventDescription}` : ""}
+${output.notes ? `Note Accertatore: ${output.notes}` : ""}
+${output.additionalConsequence ? `Conseguenza accessoria: ${output.additionalConsequence}` : ""}
+${output.appealNote ? `Nota ricorso: ${output.appealNote}` : ""}
 `.trim();
 }
 
 function parsePartialGeminiVisionOutput(value: string): GeminiVisionOutput | null {
   const output = {
+    authority: extractJsonString(value, "authority"),
     municipality: extractJsonString(value, "municipality"),
+    noticeNumber: extractJsonString(value, "noticeNumber"),
+    reportNumber: extractJsonString(value, "reportNumber"),
+    reportDate: extractJsonString(value, "reportDate"),
+    violationDate: extractJsonString(value, "violationDate"),
+    violationTime: extractJsonString(value, "violationTime"),
+    place: extractJsonString(value, "place"),
     plate: extractJsonString(value, "plate"),
     articleCode: extractJsonString(value, "articleCode"),
     paragraph: extractJsonString(value, "paragraph"),
     amount: extractJsonString(value, "amount"),
+    reducedAmount: extractJsonString(value, "reducedAmount"),
+    totalAmount: extractJsonString(value, "totalAmount"),
     points: extractJsonString(value, "points"),
+    primaryArticle: extractJsonString(value, "primaryArticle"),
+    primaryClassification: extractJsonString(value, "primaryClassification"),
     classification: extractJsonString(value, "classification"),
+    eventDescription: extractJsonString(value, "eventDescription"),
+    notes: extractJsonString(value, "notes"),
+    additionalConsequence: extractJsonString(value, "additionalConsequence"),
+    appealNote: extractJsonString(value, "appealNote"),
   };
 
-  if (
-    output.municipality &&
-    output.plate &&
-    output.articleCode &&
-    output.paragraph &&
-    output.amount &&
-    output.points
-  ) {
-    return {
-      ...output,
-      classification: output.classification || NOT_DETECTED,
-    };
-  }
-
-  return null;
+  return normalizeVisionOutput(output);
 }
 
-function extractJsonString(value: string, key: keyof GeminiVisionOutput) {
+function normalizeVisionOutput(output: GeminiVisionOutput | null) {
+  if (!output || typeof output !== "object") return null;
+  const usefulStrings = [
+    output.authority,
+    output.municipality,
+    output.noticeNumber,
+    output.reportNumber,
+    output.reportDate,
+    output.violationDate,
+    output.violationTime,
+    output.place,
+    output.plate,
+    output.articleCode,
+    output.paragraph,
+    output.amount,
+    output.reducedAmount,
+    output.totalAmount,
+    output.points,
+    output.primaryArticle,
+    output.primaryClassification,
+    output.classification,
+    output.eventDescription,
+    output.notes,
+    output.additionalConsequence,
+    output.appealNote,
+  ];
+  const hasUsefulString = usefulStrings.some(
+    (item) => typeof item === "string" && item.trim().length > 0,
+  );
+  const hasArticles =
+    Array.isArray(output.articles) &&
+    output.articles.some((article) => article.articleCode || article.paragraph);
+  const hasViolations =
+    Array.isArray(output.violations) &&
+    output.violations.some((violation) => violation.articleCode || violation.description);
+
+  if (!hasUsefulString && !hasArticles && !hasViolations) return null;
+
+  return {
+    ...output,
+    articles: Array.isArray(output.articles) ? output.articles : undefined,
+    violations: Array.isArray(output.violations) ? output.violations : undefined,
+  };
+}
+
+function extractJsonString(value: string, key: string) {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = value.match(
     new RegExp(`"${escapedKey}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`),
@@ -687,6 +851,7 @@ const extractedKeys = [
 const violationTypes = [
   "ZTL / accesso area vietata",
   "Autovelox / Eccesso di velocità",
+  "Sosta / Rimozione",
   "divieto di sosta",
   "semaforo rosso",
   "mancata revisione",

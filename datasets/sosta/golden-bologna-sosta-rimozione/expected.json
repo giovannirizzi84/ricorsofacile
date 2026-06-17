@@ -1,0 +1,17 @@
+{
+  "authority": "Comune di Bologna - Polizia Locale",
+  "municipality": "Bologna",
+  "noticeNumber": "635227-71",
+  "reportNumber": "635227-71",
+  "place": "Via del Borgo di S. Pietro",
+  "plate": "DZ923NZ",
+  "violationDate": "28/01/2026",
+  "violationTime": "11:10",
+  "articles": ["7", "158"],
+  "amounts": ["42,00", "42,00"],
+  "singleAmounts": ["42,00", "42,00"],
+  "totalAmount": "93,60",
+  "classification": "Sosta / Rimozione",
+  "notes": "Non espone contrassegni",
+  "appealNote": "Ricorso proponibile solo dopo notifica del verbale"
+}

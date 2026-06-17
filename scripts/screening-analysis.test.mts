@@ -364,7 +364,7 @@ test("golden-milano-autovelox-images.test", async () => {
   assert.equal(field(report, "plate").value, "GE264ZJ");
   assert.equal(field(report, "amount").value, "€740,32");
   assert.equal(report.violationClassification.value, "Autovelox / Eccesso di velocità");
-  assert.equal(field(report, "authority").value, "Comune Di Milano - Polizia Locale");
+  assert.equal(field(report, "authority").value, "Comune di Milano - Polizia Locale");
   assert.equal(field(report, "municipality").value, "Milano");
   assert.equal(field(report, "reportNumber").value, "01698701/2021/1/1/1");
   assert.equal(field(report, "speedDetected").value, "130 km/h");
@@ -506,6 +506,122 @@ test("end-to-end-milano-images-uses-gemini-vision-pipeline.test", async (context
       visibleText,
       /Gemini|OCR|provider|fallback|motore di regole|ESTRAZIONE STRUTTURATA/i,
     );
+  } finally {
+    if (previousKey) {
+      process.env.GEMINI_API_KEY = previousKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  }
+});
+
+test("golden-bologna-sosta-rimozione-vision-pipeline.test", async (context) => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "test-key";
+  let inlineImageCount = 0;
+  context.mock.method(globalThis, "fetch", async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      contents?: Array<{
+        parts?: Array<{ inlineData?: unknown }>;
+      }>;
+    };
+    inlineImageCount =
+      body.contents?.[0]?.parts?.filter((part) => part.inlineData).length ?? 0;
+
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    authority: "Comune di Bologna - Polizia Locale",
+                    municipality: "Bologna",
+                    noticeNumber: "635227-71",
+                    reportDate: "28/01/2026",
+                    violationDate: "28/01/2026",
+                    violationTime: "11:10",
+                    place: "Via del Borgo di S. Pietro",
+                    plate: "DZ923NZ",
+                    articles: [
+                      {
+                        articleCode: "7",
+                        paragraph: "1",
+                        amount: "42,00",
+                        description:
+                          "sostava violando prescrizioni su tariffe orarie",
+                      },
+                      {
+                        articleCode: "158",
+                        paragraph: "2",
+                        amount: "42,00",
+                        description:
+                          "zona a traffico limitato priva di autorizzazione",
+                      },
+                    ],
+                    articleCode: "7",
+                    paragraph: "1",
+                    amount: "93,60",
+                    totalAmount: "93,60",
+                    points: NOT_DETECTED,
+                    classification: "Sosta / Rimozione",
+                    eventDescription:
+                      "Sosta con violazione delle prescrizioni tariffarie e richiamo alla rimozione del veicolo.",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+
+  try {
+    const imagePath =
+      "/Users/giovannirizzi/ricorsofacile-ai/datasets/sosta/golden-bologna-sosta-rimozione/original.jpeg";
+    const buffer = await readFile(imagePath);
+    const documents = await extractDocuments(
+      [
+        new File([buffer], "golden-bologna-sosta-rimozione.jpeg", {
+          type: "image/jpeg",
+        }),
+      ],
+      { deferOcrForVision: true },
+    );
+    const visionImages = documents.flatMap((document) => document.visionImages);
+    const visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    const extractedText = [
+      visionResult.text &&
+        `DOCUMENTO: Gemini Vision\nMETODO: Gemini Vision\n${visionResult.text}`,
+      documents
+        .map(
+          (document, index) =>
+            `-- ${index + 1} of ${documents.length} --\nDOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
+        )
+        .join("\n\n---\n\n"),
+    ]
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+    const report = analyze(extractedText);
+
+    assert.equal(visionResult.available, true);
+    assert.equal(visionResult.status, "Completata");
+    assert.equal(inlineImageCount, 8);
+    assert.equal(documents[0].analysis.imagePreprocessing?.layout, "LONG_RECEIPT_IMAGE");
+    assert.equal(documents[0].analysis.imagePreprocessing?.segments.length, 6);
+    assert.equal(field(report, "municipality").value, "Bologna");
+    assert.equal(field(report, "reportNumber").value, "635227-71");
+    assert.equal(field(report, "plate").value, "DZ923NZ");
+    assert.equal(field(report, "violationDate").value, "28 gennaio 2026");
+    assert.equal(field(report, "violationTime").value, "11:10");
+    assert.equal(report.normalizedData.articleCode, "7/158");
+    assert.equal(report.normalizedData.paragraph, NOT_DETECTED);
+    assert.equal(field(report, "amount").value, "€93,60");
+    assert.equal(report.violationClassification.value, "Sosta / Rimozione");
+    assert.match(report.eventSummary, /rimozione del veicolo/i);
   } finally {
     if (previousKey) {
       process.env.GEMINI_API_KEY = previousKey;

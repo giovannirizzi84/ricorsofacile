@@ -3,6 +3,10 @@ import { pathToFileURL } from "node:url";
 import { PDFParse } from "pdf-parse";
 import { getPath as getPdfWorkerPath } from "pdf-parse/worker";
 import { createWorker, OEM, type Worker } from "tesseract.js";
+import {
+  prepareImageForVision,
+  type ImagePreprocessingMetadata,
+} from "./longReceiptImages.ts";
 
 const minimumNativePdfText = 120;
 const usefulDataPattern =
@@ -24,6 +28,7 @@ export type DocumentExtractionAnalysis = {
   quality: "Buona" | "Parziale" | "Insufficiente";
   hasUsefulData: boolean;
   textExtraction: "native" | "ocr";
+  imagePreprocessing?: ImagePreprocessingMetadata;
 };
 
 export type ExtractedDocument = {
@@ -49,28 +54,32 @@ export async function extractDocuments(
 
   async function recognize(buffer: Buffer) {
     workerState.current ??= await createItalianWorker();
-    const result = await withTimeout(
-      workerState.current.recognize(buffer),
-      ocrTimeoutMs,
-      "OCR_TIMEOUT",
+    const result = await suppressTesseractSpecialWordsWarning(() =>
+      withTimeout(
+        workerState.current!.recognize(buffer),
+        ocrTimeoutMs,
+        "OCR_TIMEOUT",
+      ),
     );
     return normalizeText(result.data.text);
   }
 
-  try {
-    for (const file of files) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      if (file.type === "application/pdf") {
-        documents.push(await extractPdf(buffer, file.name, recognize, options));
-      } else {
-        documents.push(await extractImage(buffer, file.name, recognize, options));
+  return suppressTesseractSpecialWordsWarning(async () => {
+    try {
+      for (const file of files) {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        if (file.type === "application/pdf") {
+          documents.push(await extractPdf(buffer, file.name, recognize, options));
+        } else {
+          documents.push(await extractImage(buffer, file.name, recognize, options));
+        }
       }
+    } finally {
+      await workerState.current?.terminate();
     }
-  } finally {
-    await workerState.current?.terminate();
-  }
 
-  return documents;
+    return documents;
+  });
 }
 
 async function extractImage(
@@ -79,7 +88,26 @@ async function extractImage(
   recognize: (buffer: Buffer) => Promise<string>,
   options: ExtractDocumentsOptions,
 ) {
-  const text = options.deferOcrForVision ? "" : await recognize(buffer);
+  const mimeType = mimeTypeFromFilename(filename) ?? "image/jpeg";
+  const prepared = prepareImageForVision(buffer, filename, mimeType);
+  const imagesForOcr =
+    prepared.metadata.layout === "LONG_RECEIPT_IMAGE"
+      ? prepared.visionImages.filter(
+          (image) => !/crop centrale/i.test(image.filename),
+        )
+      : prepared.visionImages;
+  const text = options.deferOcrForVision
+    ? ""
+    : normalizeText(
+        (
+          await Promise.all(
+            imagesForOcr.map((image) =>
+              recognize(Buffer.from(image.data, "base64")),
+            ),
+          )
+        ).join("\n\n"),
+      );
+  const analysis = buildAnalysis("IMAGE", text, "ocr");
 
   return {
     filename,
@@ -88,14 +116,11 @@ async function extractImage(
     warnings: options.deferOcrForVision
       ? ["OCR non eseguito in fase iniziale: analisi immagini affidata al motore visivo."]
       : [],
-    analysis: buildAnalysis("IMAGE", text, "ocr"),
-    visionImages: [
-      {
-        filename,
-        mimeType: mimeTypeFromFilename(filename) ?? "image/jpeg",
-        data: buffer.toString("base64"),
-      },
-    ],
+    analysis: {
+      ...analysis,
+      imagePreprocessing: prepared.metadata,
+    },
+    visionImages: prepared.visionImages,
   };
 }
 
@@ -261,4 +286,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, code: string) {
       }, ms);
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+async function suppressTesseractSpecialWordsWarning<T>(
+  operation: () => Promise<T>,
+) {
+  const originalError = console.error;
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  console.error = (...args: unknown[]) => {
+    const message = args.map(String).join(" ");
+    if (/failed to load\s+\.\/ita\.special-words/i.test(message)) {
+      return;
+    }
+    originalError(...args);
+  };
+  process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    const message = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array
+      ? Buffer.from(chunk).toString("utf8")
+      : String(chunk);
+    if (/failed to load\s+\.\/ita\.special-words/i.test(message)) {
+      return true;
+    }
+    return originalStderrWrite(chunk as never, ...(args as never[]));
+  }) as typeof process.stderr.write;
+
+  try {
+    return await operation();
+  } finally {
+    console.error = originalError;
+    process.stderr.write = originalStderrWrite as typeof process.stderr.write;
+  }
 }

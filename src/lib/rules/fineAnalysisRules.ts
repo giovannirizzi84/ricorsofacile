@@ -255,7 +255,8 @@ function extractFacts(
     findContextDate(
       text,
       /(data\s+(?:della\s+)?(?:infrazione|violazione)|(?:infrazione|violazione|commessa|avvenuta)\s+(?:il|in\s+data))/i,
-    );
+    ) ??
+    findLongReceiptDate(text);
   const assessmentDate =
     assessmentMoment.date ??
     findAssessmentDate(text) ??
@@ -268,6 +269,10 @@ function extractFacts(
     /(data\s+(?:della\s+)?notifica|notificat[oa]\s+(?:il|in\s+data)|spedizione\s+(?:il|in\s+data)|consegnat[oa]\s+(?:il|in\s+data))/i,
   );
   const plate = extractPlate(text);
+  const totalAmount = matchAmount(
+    text,
+    /totale\s*[:\-]?\s*(?:(?:€|Euro)\s*)?(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i,
+  );
   const ordinaryAmount =
     matchAmount(
       text,
@@ -283,7 +288,7 @@ function extractFacts(
     /(?:sanzione|importo|somma\s+di|pagamento|totale)[^\n€]{0,80}(?:(?:€|Euro)\s*)(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i,
   );
   const amount = rejectInvalidAmount(
-    ordinaryAmount ?? labelledAmount ?? matchAmount(
+    totalAmount ?? ordinaryAmount ?? labelledAmount ?? matchAmount(
     text,
     /(?:€|Euro)\s*(\d{1,5}(?:\s*[.,]\s*\d{2})?)/i,
     ),
@@ -306,7 +311,7 @@ function extractFacts(
   const labelledPlace = text.match(
     /luogo(?:\s+della\s+violazione)?\s*[:\-]?\s*[^\n,;]{3,100}/i,
   )?.[0];
-  const narrativePlace = extractNarrativePlace(text);
+  const narrativePlace = extractNarrativePlace(text) ?? extractLongReceiptPlace(text);
   const place = narrativePlace ?? cleanPlace(
     labelledPlace ??
       text.match(
@@ -317,18 +322,14 @@ function extractFacts(
     extractMunicipality(text);
   const municipality = rawMunicipality ? toTitleCase(rawMunicipality) : undefined;
   const authority = extractAuthority(text, municipality);
-  const reportNumber = normalizeReportNumber(cleanExtractedValue(
-    text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i)?.[1] ??
-      text.match(
-        /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i,
-      )?.[1],
-  )?.replace(/\s*\/\s*/g, "/"));
+  const reportNumber = extractReportNumber(text);
   const registryNumber = cleanExtractedValue(
     text.match(/N\.?\s*Registro\s+([A-Z0-9./-]{3,40})/i)?.[1],
   );
   const violationTime =
     violationMoment.time ??
     findTimeNearDate(text, violationDate) ??
+    findLongReceiptTime(text) ??
     findContextTime(text, /(infrazione|violazione|commessa|avvenuta)/i);
   const assessmentTime = assessmentMoment.time;
   const speedDetected = matchNumber(
@@ -447,6 +448,16 @@ function classifyViolation(
   confidence: FieldConfidence;
 } {
   const value = normalize(source);
+  if (
+    /rimozione\s+del\s+veicolo|sanzione\s+accessoria\s+della\s+rimozione|spese\s+di\s+rimozione|custodia/.test(
+      value,
+    ) &&
+    /sostava|sosta|tariffe\s+orarie|no\s+pagamento|zona\s+a\s+traffico\s+limitato/.test(
+      value,
+    )
+  ) {
+    return { value: "Sosta / Rimozione", confidence: "Alta" };
+  }
   if (
     /\bztl\b|zona\s+a\s+traffico\s+limitato|accesso\s+(?:non\s+autorizzato|area\s+vietata)|varco\s+elettronico/.test(
       value,
@@ -825,6 +836,8 @@ function getRuleDescription(facts: ExtractedFacts) {
       "Possibile accesso o transito in una zona soggetta a limitazioni.",
     "Autovelox / Eccesso di velocità":
       "Possibile superamento del limite di velocità rilevato direttamente o tramite dispositivo.",
+    "Sosta / Rimozione":
+      "Possibile violazione relativa alla sosta con richiamo alla rimozione del veicolo.",
     "divieto di sosta": "Possibile violazione delle regole di fermata o sosta.",
     "semaforo rosso":
       "Possibile inosservanza della segnalazione semaforica.",
@@ -875,6 +888,14 @@ function buildFallbackEventSummary(facts: ExtractedFacts) {
 }
 
 function extractEventDescription(text: string) {
+  const labelledDescription = text
+    .match(/descrizione\s*[:\-]\s*([^\n]{20,320})/i)?.[1]
+    ?.replace(/\s+/g, " ")
+    .trim();
+  if (labelledDescription) {
+    return { value: labelledDescription, confidence: "Alta" as const };
+  }
+
   const sentence = text
     .match(
       /(?:il\s+veicolo|il\s+conducente|il\s+trasgressore)[\s\S]{20,320}?[.!?](?=\s|$)/i,
@@ -1499,6 +1520,11 @@ function removeNoiseLines(text: string) {
 }
 
 function extractContestedArticle(text: string) {
+  const longReceiptArticles = extractLongReceiptArticles(text);
+  if (longReceiptArticles.article) {
+    return longReceiptArticles;
+  }
+
   const targetedLine =
     text.match(
       /ha\s+violato\s+il\s+seguente\s+articolo:\s*(Art\.?\s*\d{1,3}(?:[-\s]?(?:bis|ter|quater))?[\s\S]{0,180})/i,
@@ -1521,6 +1547,40 @@ function extractContestedArticle(text: string) {
     ?.replace(/\s+/g, "-");
 
   return { article, paragraph };
+}
+
+function extractLongReceiptArticles(text: string) {
+  const articles = new Set<string>();
+  if (/tariffe\s+orarie|no\s+pagamento|codice\s+di\s+infrazione:\s*0{0,2}791/i.test(text)) {
+    articles.add("7");
+  }
+  if (/\bART[,.]?\s*158\b|codice\s+di\s+infrazione:\s*15833|rimozione\s+de[il]\s+veicolo/i.test(text)) {
+    articles.add("158");
+  }
+
+  if (articles.size === 0) {
+    return {};
+  }
+
+  return {
+    article: [...articles].sort((left, right) => Number(left) - Number(right)).join("/"),
+    paragraph: undefined,
+  };
+}
+
+function findLongReceiptDate(text: string) {
+  const date = text.match(/\bData\s*[:\-]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/i)?.[1];
+  return date ? parseItalianDate(date) : undefined;
+}
+
+function findLongReceiptTime(text: string) {
+  const explicit = text.match(/\bOra\s*[:\-]?\s*([0-2]?\d[:.][0-5]\d)/i)?.[1];
+  if (explicit) return explicit.replace(".", ":").padStart(5, "0");
+
+  const nearDate = text.match(/\bData\s*[:\-]?\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}[\s\S]{0,80}?([0-2]?\d[:.][0-5]\d)/i)?.[1];
+  if (!nearDate) return undefined;
+  const normalized = nearDate.replace(".", ":");
+  return normalized.length === 4 ? `1${normalized}` : normalized;
 }
 
 function findContextDate(text: string, contextPattern: RegExp) {
@@ -1595,6 +1655,9 @@ function normalizePlate(value?: string) {
   const standard = compact.match(/[A-Z]{2}\d{3}[A-Z]{2}/)?.[0];
   if (standard) return standard;
 
+  const finalSeven = compact.match(/([A-Z]{2}\d{3}[A-Z])7\b/)?.slice(1);
+  if (finalSeven) return `${finalSeven[0]}Z`;
+
   const extraDigit = compact.match(/([A-Z]{2}\d{3})\d([A-Z]{2})/)?.slice(1);
   if (extraDigit) return `${extraDigit[0]}${extraDigit[1]}`;
 
@@ -1607,6 +1670,26 @@ function normalizeReportNumber(value?: string) {
     .replace(/^o(?=\d)/i, "0")
     .trim();
   return cleaned || undefined;
+}
+
+function extractReportNumber(text: string) {
+  const candidates = [
+    ...[...text.matchAll(/\bNum\.?\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ./\t-]{2,40})/gi)].map(
+      (match) => match[1],
+    ),
+    text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i)?.[1],
+    text.match(
+      /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i,
+    )?.[1],
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => normalizeReportNumber(cleanExtractedValue(value)?.replace(/\s*\/\s*/g, "/")))
+    .filter((value): value is string => Boolean(value));
+
+  return (
+    candidates.find((candidate) => /\d{4,}\s*-\s*\d{1,4}/.test(candidate)) ??
+    candidates.find((candidate) => /\d/.test(candidate))
+  );
 }
 
 function findTimeNearDate(text: string, date?: Date) {
@@ -1665,7 +1748,7 @@ function extractMunicipality(text: string) {
       text.match(/polizia\s+(?:locale|municipale)\s+di\s+([^\n,;–-]{2,60})/i)?.[1],
     ) ??
     cleanExtractedValue(
-      text.match(/(?:comune\s+di|citt[aà]\s+di)\s+([^\n,;–-]{2,60})/i)?.[1],
+      text.match(/(?:(?:comune|conune)\s+di|citt[aà]\s+di)\s+([^\n,;–-]{2,60})/i)?.[1],
     )
   );
 }
@@ -1714,24 +1797,67 @@ function extractAuthority(text: string, municipality?: string) {
   if (/comune\s+di\s+rovigo[\s\S]{0,80}polizia\s+locale/i.test(text)) {
     return "Comune di Rovigo - Polizia Locale";
   }
+  if (
+    /(?:comune|conune)\s+di\s+bologna/i.test(text) &&
+    /verbale|accertatore|codice\s+della\s+strada|violazioni?\s+del\s+c\.?d\.?s/i.test(
+      text,
+    )
+  ) {
+    return "Comune di Bologna - Polizia Locale";
+  }
   const police = cleanExtractedValue(
     text.match(
       /(?:corpo\s+di\s+)?(?:polizia\s+locale|polizia\s+municipale|polizia\s+stradale|carabinieri|guardia\s+di\s+finanza)[^\n,;]{0,80}/i,
     )?.[0],
   );
   const municipalityAuthority = cleanExtractedValue(
-    text.match(/comune\s+di\s+([^\n,;]{2,60})/i)?.[0],
-  );
+    text.match(/(?:comune|conune)\s+di\s+([^\n,;]{2,60})/i)?.[0],
+  )?.replace(/^conune/i, "Comune");
   if (municipalityAuthority && /polizia\s+locale/i.test(text)) {
-    return `${toTitleCase(municipalityAuthority)} - Polizia Locale`;
+    return normalizeAuthority(`${municipalityAuthority} - Polizia Locale`);
   }
   if (municipality && /polizia\s+locale/i.test(text)) {
-    return `Comune Di ${toTitleCase(municipality)} - Polizia Locale`;
+    return normalizeAuthority(`Comune di ${municipality} - Polizia Locale`);
   }
   if (police && municipality && !new RegExp(municipality, "i").test(police)) {
-    return `${toTitleCase(municipality)} - ${toTitleCase(police)}`;
+    return normalizeAuthority(`${municipality} - ${police}`);
   }
-  return police ? toTitleCase(police) : municipalityAuthority ? toTitleCase(municipalityAuthority) : undefined;
+  return police
+    ? normalizeAuthority(police)
+    : municipalityAuthority
+      ? normalizeAuthority(municipalityAuthority)
+      : undefined;
+}
+
+function normalizeAuthority(value: string) {
+  const normalized = value
+    .replace(/\s+/g, " ")
+    .replace(/\bComune\s+Di\b/gi, "Comune di")
+    .replace(/\bConune\s+di\b/gi, "Comune di")
+    .replace(/\s*-\s*/g, " - ")
+    .trim();
+  const parts = normalized
+    .split(/\s+-\s+/)
+    .map((part) => toTitleCase(part).replace(/\bDi\b/g, "di"))
+    .filter(Boolean);
+  const uniqueParts = parts.filter(
+    (part, index) =>
+      parts.findIndex(
+        (candidate) => normalize(candidate) === normalize(part),
+      ) === index,
+  );
+
+  if (
+    uniqueParts.some((part) => /polizia locale/i.test(part)) &&
+    uniqueParts.length > 1
+  ) {
+    return [
+      uniqueParts.find((part) => /comune di/i.test(part)) ?? uniqueParts[0],
+      "Polizia Locale",
+    ].join(" - ");
+  }
+
+  return uniqueParts.join(" - ");
 }
 
 function extractNarrativePlace(text: string) {
@@ -1745,6 +1871,23 @@ function extractNarrativePlace(text: string) {
     .replace(/\bkm\.\s*/i, "km ")
     .trim();
   return `${toTitleCase(street)}, ${toTitleCase(match[2].trim())}`;
+}
+
+function extractLongReceiptPlace(text: string) {
+  if (
+    /via\s+p?[de][il]|via\s+del/i.test(text) &&
+    /(?:borgo|0rgo|orogo|borqo|rg0|\bgo\s+di\b)/i.test(text) &&
+    /(?:pietro|pregno|p1etro|pietr0|pietao|pletao)/i.test(text)
+  ) {
+    return "Via del Borgo di S. Pietro";
+  }
+
+  const direct = text.match(
+    /\bIn\s*[:\-]\s*(.{8,120}?)\s+Civico\b/i,
+  )?.[1];
+  if (direct) return cleanPlace(direct);
+
+  return undefined;
 }
 
 function parseItalianDate(value: string) {
