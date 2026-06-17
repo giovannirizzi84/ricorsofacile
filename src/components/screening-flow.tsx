@@ -540,15 +540,17 @@ function Report({ report }: { report: ScreeningReport }) {
             }).format(new Date())}
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="rounded-full print:hidden"
-          onClick={() => {
-            void generateScreeningReportPdf(report);
-          }}
-        >
-          <Printer className="size-4" /> Scarica PDF
-        </Button>
+        <div className="print:hidden sm:flex sm:w-[300px] sm:justify-center">
+          <Button
+            variant="outline"
+            className="rounded-full"
+            onClick={() => {
+              void generateScreeningReportPdf(report);
+            }}
+          >
+            <Printer className="size-4" /> Scarica PDF
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
