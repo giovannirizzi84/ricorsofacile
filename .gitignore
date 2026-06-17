@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local OCR cache
 *.traineddata
+
+# live AI evaluation outputs
+/evaluation-results/
