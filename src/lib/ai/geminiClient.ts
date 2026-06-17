@@ -71,6 +71,170 @@ type GeminiResponse = {
   }>;
 };
 
+type GeminiVisionImage = {
+  filename: string;
+  mimeType: string;
+  data: string;
+};
+
+type GeminiVisionOutput = {
+  structuredData: {
+    authority: string;
+    municipality: string;
+    noticeNumber: string;
+    plate: string;
+    articleCode: string;
+    paragraph: string;
+    amount: string;
+    reducedAmount: string;
+    points: string;
+    violationType: string;
+    classification: string;
+    deadlines: {
+      prefetto: string;
+      giudiceDiPace: string;
+    };
+    confidence: Record<string, FieldConfidence>;
+  };
+  pages: Array<{
+    filename: string;
+    pageType:
+      | "MAIN_VERBALE"
+      | "PAYMENT_NOTICE"
+      | "RECOURSE_INFORMATION"
+      | "DRIVER_DATA_FORM"
+      | "OTHER";
+    evidence: string;
+  }>;
+  extractedData: Array<{
+    key: GeminiExtractedField["key"];
+    value: string;
+    confidence: FieldConfidence;
+    evidence: string;
+  }>;
+  summary: string;
+};
+
+export async function analyzeImagesWithGeminiVision(
+  images: GeminiVisionImage[],
+): Promise<{
+  available: boolean;
+  attempted: boolean;
+  model: string;
+  text: string;
+  status: "Completata" | "Chiave non configurata" | "Provider non disponibile" | "Risposta non valida";
+}> {
+  const model = process.env.GEMINI_MODEL?.trim() || defaultModel;
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (images.length === 0) {
+    return {
+      available: false,
+      attempted: false,
+      model,
+      text: "",
+      status: "Provider non disponibile",
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      available: false,
+      attempted: false,
+      model,
+      text: "",
+      status: "Chiave non configurata",
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 35_000);
+
+  try {
+    const endpoint = `${defaultEndpoint}/${encodeURIComponent(model)}:generateContent`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: buildVisionPrompt(images) },
+              ...images.map((image) => ({
+                inlineData: {
+                  mimeType: image.mimeType,
+                  data: image.data,
+                },
+              })),
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 4_096,
+          responseMimeType: "application/json",
+          responseSchema: visionResponseSchema,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.warn("Gemini Vision request failed", {
+        status: response.status,
+        message: errorBody.slice(0, 800),
+      });
+      return {
+        available: false,
+        attempted: true,
+        model,
+        text: "",
+        status: "Provider non disponibile",
+      };
+    }
+
+    const payload = (await response.json()) as GeminiResponse;
+    const rawOutput = payload.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text ?? "")
+      .join("")
+      .trim();
+    const output = parseGeminiVisionOutput(rawOutput);
+
+    if (!output) {
+      return {
+        available: false,
+        attempted: true,
+        model,
+        text: "",
+        status: "Risposta non valida",
+      };
+    }
+
+    return {
+      available: true,
+      attempted: true,
+      model,
+      text: renderVisionOutput(output),
+      status: "Completata",
+    };
+  } catch {
+    return {
+      available: false,
+      attempted: true,
+      model,
+      text: "",
+      status: "Provider non disponibile",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function enhanceReportWithGemini(
   extractedText: string,
   report: ScreeningReport,
@@ -335,6 +499,26 @@ ${extractedText.slice(0, 14_000)}
 `.trim();
 }
 
+function buildVisionPrompt(images: GeminiVisionImage[]) {
+  return `
+Analizza le immagini originali di un verbale italiano del Codice della Strada.
+Restituisci esclusivamente JSON conforme allo schema.
+
+REGOLE:
+- usa solo ciò che vedi nelle immagini;
+- non inventare dati mancanti;
+- se un dato non è leggibile usa "${NOT_DETECTED}";
+- compila structuredData con i campi authority, municipality, noticeNumber, plate, articleCode, paragraph, amount, reducedAmount, points, violationType, classification, deadlines, confidence;
+- duplica i dati utili anche in extractedData per compatibilità con il motore regole;
+- classifica ogni immagine/pagina come MAIN_VERBALE, PAYMENT_NOTICE, RECOURSE_INFORMATION, DRIVER_DATA_FORM oppure OTHER;
+- estrai soprattutto: ente, comune, numero verbale, targa, data verbale, articolo CdS, comma, tipo violazione, velocità rilevata, limite, punti patente, importi, presenza modulo comunicazione dati conducente;
+- per ogni dato indica evidence testuale breve.
+
+IMMAGINI INVIATE:
+${images.map((image, index) => `${index + 1}. ${image.filename} (${image.mimeType})`).join("\n")}
+`.trim();
+}
+
 function parseGeminiOutput(value?: string): GeminiScreeningOutput | null {
   if (!value) return null;
   try {
@@ -354,6 +538,64 @@ function parseGeminiOutput(value?: string): GeminiScreeningOutput | null {
   } catch {
     return null;
   }
+}
+
+function parseGeminiVisionOutput(value?: string): GeminiVisionOutput | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as GeminiVisionOutput;
+    if (
+      !parsed ||
+      !parsed.structuredData ||
+      !Array.isArray(parsed.pages) ||
+      !Array.isArray(parsed.extractedData) ||
+      typeof parsed.summary !== "string"
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function renderVisionOutput(output: GeminiVisionOutput) {
+  const structuredLines = [
+    `authority: ${output.structuredData.authority}`,
+    `municipality: ${output.structuredData.municipality}`,
+    `noticeNumber: ${output.structuredData.noticeNumber}`,
+    `plate: ${output.structuredData.plate}`,
+    `articleCode: ${output.structuredData.articleCode}`,
+    `paragraph: ${output.structuredData.paragraph}`,
+    `amount: ${output.structuredData.amount}`,
+    `reducedAmount: ${output.structuredData.reducedAmount}`,
+    `points: ${output.structuredData.points}`,
+    `violationType: ${output.structuredData.violationType}`,
+    `classification: ${output.structuredData.classification}`,
+    `prefettoDeadline: ${output.structuredData.deadlines.prefetto}`,
+    `giudiceDiPaceDeadline: ${output.structuredData.deadlines.giudiceDiPace}`,
+  ].join("\n");
+  const fieldLines = output.extractedData
+    .filter((field) => field.value && !missingValues.has(field.value))
+    .map((field) => `${field.key}: ${field.value}\nEvidence: ${field.evidence}`)
+    .join("\n");
+  const pageLines = output.pages
+    .map(
+      (page, index) =>
+        `Pagina Vision ${index + 1}: ${page.filename}\nTipo pagina: ${page.pageType}\n${page.evidence}`,
+    )
+    .join("\n\n");
+
+  return `
+GEMINI VISION STRUCTURED EXTRACTION
+${output.summary}
+
+${structuredLines}
+
+${fieldLines}
+
+${pageLines}
+`.trim();
 }
 
 function isGroundedField(field: GeminiExtractedField, source: string) {
@@ -566,4 +808,114 @@ const screeningResponseSchema = {
     "finalRecommendation",
     "disclaimer",
   ],
+};
+
+const visionResponseSchema = {
+  type: "object",
+  properties: {
+    structuredData: {
+      type: "object",
+      properties: {
+        authority: { type: "string" },
+        municipality: { type: "string" },
+        noticeNumber: { type: "string" },
+        plate: { type: "string" },
+        articleCode: { type: "string" },
+        paragraph: { type: "string" },
+        amount: { type: "string" },
+        reducedAmount: { type: "string" },
+        points: { type: "string" },
+        violationType: { type: "string" },
+        classification: { type: "string" },
+        deadlines: {
+          type: "object",
+          properties: {
+            prefetto: { type: "string" },
+            giudiceDiPace: { type: "string" },
+          },
+          required: ["prefetto", "giudiceDiPace"],
+        },
+        confidence: {
+          type: "object",
+          properties: {
+            authority: { type: "string", enum: confidenceEnum },
+            municipality: { type: "string", enum: confidenceEnum },
+            noticeNumber: { type: "string", enum: confidenceEnum },
+            plate: { type: "string", enum: confidenceEnum },
+            articleCode: { type: "string", enum: confidenceEnum },
+            paragraph: { type: "string", enum: confidenceEnum },
+            amount: { type: "string", enum: confidenceEnum },
+            reducedAmount: { type: "string", enum: confidenceEnum },
+            points: { type: "string", enum: confidenceEnum },
+            violationType: { type: "string", enum: confidenceEnum },
+            classification: { type: "string", enum: confidenceEnum },
+          },
+          required: [
+            "authority",
+            "municipality",
+            "noticeNumber",
+            "plate",
+            "articleCode",
+            "paragraph",
+            "amount",
+            "reducedAmount",
+            "points",
+            "violationType",
+            "classification",
+          ],
+        },
+      },
+      required: [
+        "authority",
+        "municipality",
+        "noticeNumber",
+        "plate",
+        "articleCode",
+        "paragraph",
+        "amount",
+        "reducedAmount",
+        "points",
+        "violationType",
+        "classification",
+        "deadlines",
+        "confidence",
+      ],
+    },
+    pages: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          filename: { type: "string" },
+          pageType: {
+            type: "string",
+            enum: [
+              "MAIN_VERBALE",
+              "PAYMENT_NOTICE",
+              "RECOURSE_INFORMATION",
+              "DRIVER_DATA_FORM",
+              "OTHER",
+            ],
+          },
+          evidence: { type: "string" },
+        },
+        required: ["filename", "pageType", "evidence"],
+      },
+    },
+    extractedData: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string", enum: extractedKeys },
+          value: { type: "string" },
+          confidence: { type: "string", enum: confidenceEnum },
+          evidence: { type: "string" },
+        },
+        required: ["key", "value", "confidence", "evidence"],
+      },
+    },
+    summary: { type: "string" },
+  },
+  required: ["structuredData", "pages", "extractedData", "summary"],
 };

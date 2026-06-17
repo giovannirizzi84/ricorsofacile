@@ -290,7 +290,7 @@ export function ScreeningFlow() {
                         className="sr-only"
                         type="file"
                         multiple
-                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                         onChange={(event) => {
                           setError("");
                           setFiles(Array.from(event.target.files ?? []));

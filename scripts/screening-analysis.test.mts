@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import { jsPDF } from "jspdf";
 import { extractDocuments } from "../src/lib/documents/extractText.ts";
 import { analyzeFineText } from "../src/lib/rules/fineAnalysisRules.ts";
 import {
@@ -62,6 +63,34 @@ function visibleReportText(report: ReturnType<typeof analyze>) {
     report.finalRecommendation,
     report.disclaimer,
   ].join("\n");
+}
+
+function createTextPdf(text: string) {
+  const pdf = new jsPDF();
+  const lines = pdf.splitTextToSize(text, 180);
+  pdf.text(lines, 15, 20);
+  return Buffer.from(pdf.output("arraybuffer"));
+}
+
+async function createImagePdf(imagePaths: string[]) {
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+
+  for (const [index, imagePath] of imagePaths.entries()) {
+    if (index > 0) {
+      pdf.addPage();
+    }
+    const imageBuffer = await readFile(imagePath);
+    pdf.addImage(
+      `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+      "JPEG",
+      8,
+      8,
+      194,
+      281,
+    );
+  }
+
+  return Buffer.from(pdf.output("arraybuffer"));
 }
 
 test("classifica un verbale ZTL senza inventare dati mancanti", () => {
@@ -245,6 +274,117 @@ test("golden-rovigo-speeding", async () => {
   const visibleText = visibleReportText(report);
   assert.doesNotMatch(visibleText, /METODO|QUALITÀ ESTRAZIONE|ANALISI AI|MOTORE REGOLE|Testo estratto dal verbale/i);
   assert.doesNotMatch(visibleText, /Testo PDF \+ regole|OCR e regole|Qualità estrazione|Analisi AI non disponibile|Motore regole usato/i);
+  assertPrudentLanguage(report);
+});
+
+test("pdf-testuale-usa-estrazione-nativa.test", async () => {
+  const textPdf = createTextPdf(`
+    COMUNE DI TEST
+    POLIZIA LOCALE
+    VERBALE DI CONTESTAZIONE DI VIOLAZIONE DEL CODICE DELLA STRADA
+    Verbale n. TXT-100/2026
+    Data violazione 10/04/2026 ore 09:20
+    Targa AA000AA
+    Art. 7 Codice della Strada comma 14
+    Importo Euro 87,00
+    Il veicolo accedeva in zona a traffico limitato.
+    Informazioni per ricorso al Prefetto entro 60 giorni e Giudice di Pace entro 30 giorni.
+  `.repeat(3));
+  const [document] = await extractDocuments([
+    new File([textPdf], "verbale-testuale.pdf", {
+      type: "application/pdf",
+    }),
+  ]);
+
+  assert.equal(document.method, "Testo PDF");
+  assert.equal(document.analysis.type, "PDF");
+  assert.equal(document.analysis.textExtraction, "native");
+  assert.equal(document.analysis.hasUsefulData, true);
+  assert.equal(document.visionImages.length, 0);
+});
+
+test("pdf-scannerizzato-e-multipagina-genera-immagini-vision.test", async () => {
+  const imagePaths = [
+    "/Users/giovannirizzi/Downloads/IMG_6358.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6360.JPG",
+  ];
+  for (const imagePath of imagePaths) {
+    await access(imagePath);
+  }
+
+  const imagePdf = await createImagePdf(imagePaths);
+  const [document] = await extractDocuments([
+    new File([imagePdf], "verbale-scannerizzato.pdf", {
+      type: "application/pdf",
+    }),
+  ]);
+
+  assert.equal(document.method, "OCR");
+  assert.equal(document.analysis.type, "PDF");
+  assert.equal(document.analysis.textExtraction, "ocr");
+  assert.equal(document.pages, 2);
+  assert.equal(document.visionImages.length, 2);
+  assert.equal(document.visionImages[0].mimeType, "image/png");
+  assert.match(document.visionImages[0].filename, /pagina 1\.png$/);
+});
+
+test("golden-milano-autovelox-images.test", async () => {
+  const imagePaths = [
+    "/Users/giovannirizzi/Downloads/IMG_6357.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6358.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6359.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6360.JPG",
+  ];
+
+  const files = await Promise.all(
+    imagePaths.map(async (imagePath) => {
+      await access(imagePath);
+      const buffer = await readFile(imagePath);
+      return new File([buffer], imagePath.split("/").at(-1), {
+        type: "image/jpeg",
+      });
+    }),
+  );
+  const documents = await extractDocuments(files);
+  assert.equal(documents.length, 4);
+  assert.ok(documents.every((document) => document.analysis.type === "IMAGE"));
+  assert.ok(documents.every((document) => document.visionImages.length === 1));
+  const extractedText = documents
+    .map(
+      (document, index) =>
+        `-- ${index + 1} of ${documents.length} --\nDOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
+    )
+    .join("\n\n---\n\n");
+  const report = analyze(extractedText);
+
+  assert.equal(report.normalizedData.articleCode, "142");
+  assert.equal(report.normalizedData.paragraph, "9");
+  assert.equal(report.normalizedData.points, 6);
+  assert.equal(field(report, "plate").value, "GE264ZJ");
+  assert.equal(field(report, "amount").value, "€740,32");
+  assert.equal(report.violationClassification.value, "Autovelox / Eccesso di velocità");
+  assert.equal(field(report, "authority").value, "Comune Di Milano - Polizia Locale");
+  assert.equal(field(report, "municipality").value, "Milano");
+  assert.equal(field(report, "reportNumber").value, "01698701/2021/1/1/1");
+  assert.equal(field(report, "speedDetected").value, "130 km/h");
+  assert.equal(field(report, "speedLimit").value, "70 km/h");
+  assert.equal(field(report, "licensePoints").value, "6");
+  assert.ok(
+    report.extractionDebug.pages.some(
+      (page) => page.classification === "PAYMENT_NOTICE",
+    ),
+  );
+  assert.ok(
+    report.extractionDebug.pages.some(
+      (page) => page.classification === "DRIVER_DATA_FORM",
+    ),
+  );
+  assert.equal(
+    report.extractionDebug.pages.find(
+      (page) => page.classification === "MAIN_VERBALE",
+    )?.pageNumber,
+    2,
+  );
   assertPrudentLanguage(report);
 });
 

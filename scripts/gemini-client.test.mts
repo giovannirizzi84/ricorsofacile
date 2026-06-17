@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enhanceReportWithGemini } from "../src/lib/ai/geminiClient.ts";
+import {
+  analyzeImagesWithGeminiVision,
+  enhanceReportWithGemini,
+} from "../src/lib/ai/geminiClient.ts";
 import { analyzeFineText } from "../src/lib/rules/fineAnalysisRules.ts";
 import { SCREENING_DISCLAIMER } from "../src/lib/screening-report.ts";
 
@@ -108,6 +111,109 @@ test("accetta una risposta Gemini strutturata senza sostituire dati certi", asyn
       "Non rilevato nel documento caricato",
       "Gemini non deve introdurre una targa assente dal testo",
     );
+  } finally {
+    if (previousKey) {
+      process.env.GEMINI_API_KEY = previousKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  }
+});
+
+test("Gemini Vision invia immagini originali come inlineData", async (context) => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "test-key";
+  let requestBody: {
+    contents?: Array<{
+      parts?: Array<{ inlineData?: { mimeType?: string; data?: string } }>;
+    }>;
+  } | null = null;
+
+  context.mock.method(globalThis, "fetch", async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    structuredData: {
+                      authority: "Polizia Locale",
+                      municipality: "Bologna",
+                      noticeNumber: "AV-1",
+                      plate: "AB123CD",
+                      articleCode: "142",
+                      paragraph: "9",
+                      amount: "Non rilevato nel documento caricato",
+                      reducedAmount: "Non rilevato nel documento caricato",
+                      points: "Non rilevato nel documento caricato",
+                      violationType: "Eccesso velocità",
+                      classification: "Autovelox / Eccesso di velocità",
+                      deadlines: {
+                        prefetto: "60 giorni",
+                        giudiceDiPace: "30 giorni",
+                      },
+                      confidence: {
+                        authority: "Media",
+                        municipality: "Media",
+                        noticeNumber: "Media",
+                        plate: "Media",
+                        articleCode: "Alta",
+                        paragraph: "Alta",
+                        amount: "Non rilevato",
+                        reducedAmount: "Non rilevato",
+                        points: "Non rilevato",
+                        violationType: "Media",
+                        classification: "Media",
+                      },
+                    },
+                    pages: [
+                      {
+                        filename: "verbale.jpg",
+                        pageType: "MAIN_VERBALE",
+                        evidence: "Art. 142 comma 9",
+                      },
+                    ],
+                    extractedData: [
+                      {
+                        key: "article",
+                        value: "142",
+                        confidence: "Alta",
+                        evidence: "Art. 142 comma 9",
+                      },
+                    ],
+                    summary: "Verbale letto da immagine.",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+
+  try {
+    const result = await analyzeImagesWithGeminiVision([
+      {
+        filename: "verbale.jpg",
+        mimeType: "image/jpeg",
+        data: "YWJj",
+      },
+    ]);
+    const inlineParts = requestBody?.contents?.[0]?.parts?.filter(
+      (part) => part.inlineData,
+    );
+
+    assert.equal(result.available, true);
+    assert.equal(result.status, "Completata");
+    assert.equal(inlineParts?.length, 1);
+    assert.equal(inlineParts?.[0]?.inlineData?.mimeType, "image/jpeg");
+    assert.equal(inlineParts?.[0]?.inlineData?.data, "YWJj");
+    assert.match(result.text, /GEMINI VISION STRUCTURED EXTRACTION/);
   } finally {
     if (previousKey) {
       process.env.GEMINI_API_KEY = previousKey;

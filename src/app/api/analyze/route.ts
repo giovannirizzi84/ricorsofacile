@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { enhanceReportWithGemini } from "@/lib/ai/geminiClient";
+import {
+  analyzeImagesWithGeminiVision,
+  enhanceReportWithGemini,
+} from "@/lib/ai/geminiClient";
 import { extractDocuments } from "@/lib/documents/extractText";
 import {
   analyzeFineText,
@@ -13,6 +16,7 @@ const allowedTypes = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
+  "image/webp",
 ]);
 const maxFiles = 5;
 const maxFileSize = 10 * 1024 * 1024;
@@ -31,11 +35,20 @@ export async function POST(request: Request) {
     }
 
     const documents = await extractDocuments(files);
-    const extractedText = documents
+    const visionImages = documents.flatMap((document) => document.visionImages);
+    const visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    const ocrText = documents
       .map(
-        (document) =>
-          `DOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
+        (document, index) =>
+          `-- ${index + 1} of ${documents.length} --\nDOCUMENTO: ${document.filename}\nMETODO: ${document.method}\n${document.text}`,
       )
+      .join("\n\n---\n\n");
+    const extractedText = [
+      visionResult.text &&
+        `DOCUMENTO: Gemini Vision\nMETODO: Gemini Vision\n${visionResult.text}`,
+      ocrText,
+    ]
+      .filter(Boolean)
       .join("\n\n---\n\n");
 
     const caseData: FineCaseData = {
@@ -61,9 +74,17 @@ export async function POST(request: Request) {
           filename: document.filename,
           method: document.method,
           characters: document.text.length,
+          analysis: document.analysis,
+          visionImages: document.visionImages.length,
           warnings: document.warnings,
         })),
         aiEnhanced: report.aiEnhanced,
+        vision: {
+          attempted: visionResult.attempted,
+          available: visionResult.available,
+          model: visionResult.model,
+          status: visionResult.status,
+        },
         rulesEngineUsed: report.rulesEngineUsed,
         aiExecution: report.aiExecution,
       },
@@ -102,7 +123,7 @@ function validateFiles(files: File[]) {
   for (const file of files) {
     totalSize += file.size;
     if (!allowedTypes.has(file.type)) {
-      return `Formato non supportato: ${file.name}. Usa PDF, JPG o PNG.`;
+      return `Formato non supportato: ${file.name}. Usa PDF, JPG, PNG o WEBP.`;
     }
     if (file.size > maxFileSize) {
       return `${file.name} supera il limite di 10 MB.`;

@@ -30,6 +30,8 @@ export type FieldConfidence = "Alta" | "Media" | "Bassa" | "Non rilevato";
 export type PageClassification =
   | "MAIN_VERBALE"
   | "PAYMENT_NOTICE"
+  | "RECOURSE_INFORMATION"
+  | "DRIVER_DATA_FORM"
   | "DRIVER_COMMUNICATION_FORM"
   | "WARNINGS"
   | "NOISE_OR_COVER";

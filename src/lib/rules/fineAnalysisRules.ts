@@ -267,10 +267,7 @@ function extractFacts(
     text,
     /(data\s+(?:della\s+)?notifica|notificat[oa]\s+(?:il|in\s+data)|spedizione\s+(?:il|in\s+data)|consegnat[oa]\s+(?:il|in\s+data))/i,
   );
-  const plate = text
-    .toUpperCase()
-    .match(/\b[A-Z]{2}\s?\d{3}\s?[A-Z]{2}\b/)?.[0]
-    ?.replace(/\s/g, "");
+  const plate = extractPlate(text);
   const ordinaryAmount =
     matchAmount(
       text,
@@ -320,12 +317,12 @@ function extractFacts(
     extractMunicipality(text);
   const municipality = rawMunicipality ? toTitleCase(rawMunicipality) : undefined;
   const authority = extractAuthority(text, municipality);
-  const reportNumber = cleanExtractedValue(
+  const reportNumber = normalizeReportNumber(cleanExtractedValue(
     text.match(/N\.?\s*verbale\s+([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i)?.[1] ??
       text.match(
         /(?:verbale|accertamento)\s*(?:n(?:umero)?\.?|nr\.?)\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ./\t-]{2,40})/i,
       )?.[1],
-  )?.replace(/\s*\/\s*/g, "/");
+  )?.replace(/\s*\/\s*/g, "/"));
   const registryNumber = cleanExtractedValue(
     text.match(/N\.?\s*Registro\s+([A-Z0-9./-]{3,40})/i)?.[1],
   );
@@ -336,11 +333,11 @@ function extractFacts(
   const assessmentTime = assessmentMoment.time;
   const speedDetected = matchNumber(
     text,
-    /(?:circolava\s+alla\s+velocit[aà]\s+di|velocit[aà]\s+rilevata\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
+    /(?:circolava\s+alla\s+velocit[aà]\s+di|velocit[aà][\s']*rilevata\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
   );
   const speedLimit = matchNumber(
     text,
-    /(?:limite\s+di\s+velocit[aà]\s+(?:era\s+)?di|limite\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
+    /(?:limite\s+di\s+velocit[aà]\s+(?:era\s+)?di|consentita|limite\s*[:\-]?)\s*(?:Km\/h\s*)?(\d{1,3})(?:\s*km\/h)?/i,
   );
   const speedExcess = matchNumber(
     text,
@@ -1342,7 +1339,9 @@ function buildDocumentPagePipeline(text: string): DocumentPagePipeline {
     .map((page) => page.text)
     .join("\n\n");
   const warningsText = pages
-    .filter((page) => page.classification === "WARNINGS")
+    .filter((page) =>
+      ["WARNINGS", "RECOURSE_INFORMATION"].includes(page.classification),
+    )
     .map((page) => page.text)
     .join("\n\n");
   const validationWarnings: string[] = [];
@@ -1390,11 +1389,13 @@ function classifyPage(text: string): Pick<
   const scores = {
     MAIN_VERBALE: scoreMatches(normalizedPage, [
       /verbale di contestazione di violazione del codice della strada/,
+      /verbale d['’]?accertamento d['’]?infrazione/,
+      /al codice della strada/,
       /n registro/,
-      /n verbale/,
+      /n verbale|numero verbale/,
       /ha violato il seguente articolo/,
       /\bart\b/,
-      /modalita di pagamento/,
+      /velocita rilevata|targa|riferimento accertamento/,
     ]),
     PAYMENT_NOTICE: scoreMatches(normalizedPage, [
       /avviso di pagamento/,
@@ -1405,18 +1406,23 @@ function classifyPage(text: string): Pick<
       /entro 5 giorni/,
       /dal 6 al 60 giorno/,
     ]),
-    DRIVER_COMMUNICATION_FORM: scoreMatches(normalizedPage, [
+    DRIVER_DATA_FORM: scoreMatches(normalizedPage, [
       /modulo di comunicazione dati del conducente/,
+      /comunicazione dati del conducente/,
       /ipotesi a/,
       /ipotesi b/,
       /patente di guida/,
+      /firma del conducente/,
     ]),
-    WARNINGS: scoreMatches(normalizedPage, [
+    RECOURSE_INFORMATION: scoreMatches(normalizedPage, [
       /\bavvertenze\b/,
       /\bricorso\b/,
       /giudice di pace/,
       /prefetto/,
+      /modalita di estinzione/,
     ]),
+    DRIVER_COMMUNICATION_FORM: 0,
+    WARNINGS: 0,
     NOISE_OR_COVER: scoreMatches(normalizedPage, [
       /1234567890qwerty/,
       /qwertyuiopasdfghjklzxcv/,
@@ -1425,14 +1431,17 @@ function classifyPage(text: string): Pick<
   if (scores.MAIN_VERBALE >= 3) {
     return { classification: "MAIN_VERBALE", score: scores.MAIN_VERBALE };
   }
-  if (scores.DRIVER_COMMUNICATION_FORM >= 3) {
+  if (scores.DRIVER_DATA_FORM >= 3) {
     return {
-      classification: "DRIVER_COMMUNICATION_FORM",
-      score: scores.DRIVER_COMMUNICATION_FORM,
+      classification: "DRIVER_DATA_FORM",
+      score: scores.DRIVER_DATA_FORM,
     };
   }
-  if (scores.WARNINGS >= 3) {
-    return { classification: "WARNINGS", score: scores.WARNINGS };
+  if (scores.RECOURSE_INFORMATION >= 3) {
+    return {
+      classification: "RECOURSE_INFORMATION",
+      score: scores.RECOURSE_INFORMATION,
+    };
   }
   if (scores.PAYMENT_NOTICE >= 2) {
     return { classification: "PAYMENT_NOTICE", score: scores.PAYMENT_NOTICE };
@@ -1561,6 +1570,45 @@ function findContextTime(text: string, contextPattern: RegExp) {
   return undefined;
 }
 
+function extractPlate(text: string) {
+  const contextual =
+    text.match(/targa\s*[:\-]?\s*([A-Z0-9)\]\s]{6,10})/i)?.[1] ??
+    text.match(/veicolo\s+targato\s+([A-Z0-9)\]\s]{6,10})/i)?.[1];
+  const normalizedContextual = normalizePlate(contextual);
+  if (normalizedContextual) return normalizedContextual;
+
+  return normalizePlate(
+    text
+      .toUpperCase()
+      .match(/\b[A-Z]{2}\s?\d{3}\s?[A-Z0-9)\]]{2,3}\b/)?.[0],
+  );
+}
+
+function normalizePlate(value?: string) {
+  if (!value) return undefined;
+  const compact = value
+    .toUpperCase()
+    .replace(/\s/g, "")
+    .replace(/[)\]]/g, "J")
+    .replace(/[^A-Z0-9]/g, "");
+
+  const standard = compact.match(/[A-Z]{2}\d{3}[A-Z]{2}/)?.[0];
+  if (standard) return standard;
+
+  const extraDigit = compact.match(/([A-Z]{2}\d{3})\d([A-Z]{2})/)?.slice(1);
+  if (extraDigit) return `${extraDigit[0]}${extraDigit[1]}`;
+
+  return undefined;
+}
+
+function normalizeReportNumber(value?: string) {
+  const cleaned = value
+    ?.replace(/\s*-\s*Pag\.?\s*\d+\s*\/\s*\d+.*$/i, "")
+    .replace(/^o(?=\d)/i, "0")
+    .trim();
+  return cleaned || undefined;
+}
+
 function findTimeNearDate(text: string, date?: Date) {
   if (!date) return undefined;
   const dateText = [
@@ -1587,7 +1635,7 @@ function findPaymentAmount(text: string, type: "reduced" | "standard") {
   const pattern =
     type === "reduced"
       ? /(?:entro\s+(?:cinque|5)\s+giorni|ridott[oa]\s+del\s+30%)[\s\S]{0,260}?(?:totale\s+di\s+Euro|Euro)\s+(\d{1,5}(?:[.,]\d{2})?)/i
-      : /dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno[\s\S]{0,260}?(?:totale\s+di\s+Euro|Euro)\s+(\d{1,5}(?:[.,]\d{2})?)/i;
+      : /(?:(?:entro|in)\s+60\s+giorni|dal\s+6[°º]?\s+al\s+60[°º]?\s+giorno|misura\s+ridotta)[\s\S]{0,260}?(?:totale\s+di\s+Euro|Euro)\s+(\d{1,5}(?:[.,]\d{2})?)/i;
   return rejectInvalidAmount(matchAmount(text, pattern));
 }
 
@@ -1676,6 +1724,9 @@ function extractAuthority(text: string, municipality?: string) {
   );
   if (municipalityAuthority && /polizia\s+locale/i.test(text)) {
     return `${toTitleCase(municipalityAuthority)} - Polizia Locale`;
+  }
+  if (municipality && /polizia\s+locale/i.test(text)) {
+    return `Comune Di ${toTitleCase(municipality)} - Polizia Locale`;
   }
   if (police && municipality && !new RegExp(municipality, "i").test(police)) {
     return `${toTitleCase(municipality)} - ${toTitleCase(police)}`;
