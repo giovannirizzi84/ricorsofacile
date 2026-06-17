@@ -389,6 +389,31 @@ test("golden-milano-autovelox-images.test", async () => {
   assertPrudentLanguage(report);
 });
 
+test("image-upload-defers-ocr-and-prepares-vision-input.test", async () => {
+  const imagePath = "/Users/giovannirizzi/Downloads/IMG_6358.JPG";
+  await access(imagePath);
+  const buffer = await readFile(imagePath);
+  const [document] = await extractDocuments(
+    [
+      new File([buffer], "IMG_6358.JPG", {
+        type: "image/jpeg",
+      }),
+    ],
+    { deferOcrForVision: true },
+  );
+
+  assert.equal(document.analysis.type, "IMAGE");
+  assert.equal(document.method, "OCR");
+  assert.equal(document.text, "");
+  assert.equal(document.visionImages.length, 1);
+  assert.equal(document.visionImages[0].mimeType, "image/jpeg");
+  assert.ok(
+    document.warnings.some((warning) =>
+      warning.includes("analisi immagini affidata al motore visivo"),
+    ),
+  );
+});
+
 test("end-to-end-milano-images-uses-gemini-vision-pipeline.test", async (context) => {
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = "test-key";

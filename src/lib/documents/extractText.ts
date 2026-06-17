@@ -36,7 +36,14 @@ export type ExtractedDocument = {
   visionImages: VisionDocumentImage[];
 };
 
-export async function extractDocuments(files: File[]) {
+export type ExtractDocumentsOptions = {
+  deferOcrForVision?: boolean;
+};
+
+export async function extractDocuments(
+  files: File[],
+  options: ExtractDocumentsOptions = {},
+) {
   const documents: ExtractedDocument[] = [];
   const workerState: { current: Worker | null } = { current: null };
 
@@ -54,9 +61,9 @@ export async function extractDocuments(files: File[]) {
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
       if (file.type === "application/pdf") {
-        documents.push(await extractPdf(buffer, file.name, recognize));
+        documents.push(await extractPdf(buffer, file.name, recognize, options));
       } else {
-        documents.push(await extractImage(buffer, file.name, recognize));
+        documents.push(await extractImage(buffer, file.name, recognize, options));
       }
     }
   } finally {
@@ -70,14 +77,17 @@ async function extractImage(
   buffer: Buffer,
   filename: string,
   recognize: (buffer: Buffer) => Promise<string>,
+  options: ExtractDocumentsOptions,
 ) {
-  const text = await recognize(buffer);
+  const text = options.deferOcrForVision ? "" : await recognize(buffer);
 
   return {
     filename,
     text,
     method: "OCR" as const,
-    warnings: [],
+    warnings: options.deferOcrForVision
+      ? ["OCR non eseguito in fase iniziale: analisi immagini affidata al motore visivo."]
+      : [],
     analysis: buildAnalysis("IMAGE", text, "ocr"),
     visionImages: [
       {
@@ -93,6 +103,7 @@ async function extractPdf(
   buffer: Buffer,
   filename: string,
   recognize: (buffer: Buffer) => Promise<string>,
+  options: ExtractDocumentsOptions,
 ) {
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
 
@@ -124,7 +135,9 @@ async function extractPdf(
 
     for (const [index, page] of screenshots.pages.entries()) {
       const pageBuffer = Buffer.from(page.data);
-      pageTexts.push(await recognize(pageBuffer));
+      if (!options.deferOcrForVision) {
+        pageTexts.push(await recognize(pageBuffer));
+      }
       visionImages.push({
         filename: `${filename} - pagina ${index + 1}.png`,
         mimeType: "image/png",
@@ -138,16 +151,20 @@ async function extractPdf(
             `Il PDF è scannerizzato: OCR limitato alle prime ${maxOcrPdfPages} pagine.`,
           ]
         : [];
+    const ocrWarnings = options.deferOcrForVision
+      ? ["OCR non eseguito in fase iniziale: PDF scannerizzato affidato al motore visivo."]
+      : [];
+    const extractedText = normalizeText(pageTexts.join("\n\n"));
 
     return {
       filename,
-      text: normalizeText(pageTexts.join("\n\n")),
+      text: extractedText,
       method: "OCR" as const,
       pages: screenshots.pages.length,
-      warnings,
+      warnings: [...warnings, ...ocrWarnings],
       analysis: buildAnalysis(
         "PDF",
-        normalizeText(pageTexts.join("\n\n")),
+        extractedText,
         "ocr",
       ),
       visionImages,

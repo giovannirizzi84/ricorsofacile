@@ -34,7 +34,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const documents = await extractDocuments(files);
+    const documents = await extractDocuments(files, {
+      deferOcrForVision: true,
+    });
     const visionImages = documents.flatMap((document) => document.visionImages);
     const visionResult = await analyzeImagesWithGeminiVision(visionImages);
     const providerLog = {
