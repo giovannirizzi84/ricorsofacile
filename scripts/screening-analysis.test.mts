@@ -301,7 +301,7 @@ test("pdf-testuale-usa-estrazione-nativa.test", async () => {
   assert.equal(document.analysis.type, "PDF");
   assert.equal(document.analysis.textExtraction, "native");
   assert.equal(document.analysis.hasUsefulData, true);
-  assert.equal(document.visionImages.length, 0);
+  assert.ok(document.visionImages.length > 0);
 });
 
 test("pdf-scannerizzato-e-multipagina-genera-immagini-vision.test", async () => {
@@ -314,13 +314,16 @@ test("pdf-scannerizzato-e-multipagina-genera-immagini-vision.test", async () => 
   }
 
   const imagePdf = await createImagePdf(imagePaths);
-  const [document] = await extractDocuments([
-    new File([imagePdf], "verbale-scannerizzato.pdf", {
-      type: "application/pdf",
-    }),
-  ]);
+  const [document] = await extractDocuments(
+    [
+      new File([imagePdf], "verbale-scannerizzato.pdf", {
+        type: "application/pdf",
+      }),
+    ],
+    { deferOcrForVision: true },
+  );
 
-  assert.equal(document.method, "OCR");
+  assert.equal(document.method, "Gemini Vision");
   assert.equal(document.analysis.type, "PDF");
   assert.equal(document.analysis.textExtraction, "ocr");
   assert.equal(document.pages, 2);
@@ -403,7 +406,7 @@ test("image-upload-defers-ocr-and-prepares-vision-input.test", async () => {
   );
 
   assert.equal(document.analysis.type, "IMAGE");
-  assert.equal(document.method, "OCR");
+  assert.equal(document.method, "Gemini Vision");
   assert.equal(document.text, "");
   assert.equal(document.visionImages.length, 1);
   assert.equal(document.visionImages[0].mimeType, "image/jpeg");

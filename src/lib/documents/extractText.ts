@@ -2,7 +2,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PDFParse } from "pdf-parse";
 import { getPath as getPdfWorkerPath } from "pdf-parse/worker";
-import { createWorker, OEM, type Worker } from "tesseract.js";
 import {
   prepareImageForVision,
   type ImagePreprocessingMetadata,
@@ -34,7 +33,7 @@ export type DocumentExtractionAnalysis = {
 export type ExtractedDocument = {
   filename: string;
   text: string;
-  method: "OCR" | "Testo PDF";
+  method: "OCR" | "Testo PDF" | "Gemini Vision";
   pages?: number;
   warnings: string[];
   analysis: DocumentExtractionAnalysis;
@@ -43,16 +42,27 @@ export type ExtractedDocument = {
 
 export type ExtractDocumentsOptions = {
   deferOcrForVision?: boolean;
+  ocrEnabled?: boolean;
 };
+
+type TesseractWorker = Awaited<
+  ReturnType<typeof import("tesseract.js")["createWorker"]>
+>;
 
 export async function extractDocuments(
   files: File[],
   options: ExtractDocumentsOptions = {},
 ) {
   const documents: ExtractedDocument[] = [];
-  const workerState: { current: Worker | null } = { current: null };
+  const workerState: { current: TesseractWorker | null } = { current: null };
+  const ocrEnabled = options.ocrEnabled ?? true;
 
   async function recognize(buffer: Buffer) {
+    if (!ocrEnabled) {
+      const error = new Error("OCR_DISABLED");
+      error.name = "OCR_DISABLED";
+      throw error;
+    }
     workerState.current ??= await createItalianWorker();
     const result = await suppressTesseractSpecialWordsWarning(() =>
       withTimeout(
@@ -112,7 +122,7 @@ async function extractImage(
   return {
     filename,
     text,
-    method: "OCR" as const,
+    method: options.deferOcrForVision ? "Gemini Vision" as const : "OCR" as const,
     warnings: options.deferOcrForVision
       ? ["OCR non eseguito in fase iniziale: analisi immagini affidata al motore visivo."]
       : [],
@@ -136,18 +146,6 @@ async function extractPdf(
     const nativeResult = await parser.getText();
     const nativeText = normalizeText(nativeResult.text);
     const nativeAnalysis = buildAnalysis("PDF", nativeText, "native");
-
-    if (isNativePdfTextUseful(nativeAnalysis)) {
-      return {
-        filename,
-        text: nativeText,
-        method: "Testo PDF" as const,
-        pages: nativeResult.total,
-        warnings: [],
-        analysis: nativeAnalysis,
-        visionImages: [],
-      };
-    }
 
     const screenshots = await parser.getScreenshot({
       first: maxOcrPdfPages,
@@ -179,19 +177,30 @@ async function extractPdf(
     const ocrWarnings = options.deferOcrForVision
       ? ["OCR non eseguito in fase iniziale: PDF scannerizzato affidato al motore visivo."]
       : [];
-    const extractedText = normalizeText(pageTexts.join("\n\n"));
+    const extractedText = isNativePdfTextUseful(nativeAnalysis)
+      ? nativeText
+      : normalizeText(pageTexts.join("\n\n"));
+    const method = isNativePdfTextUseful(nativeAnalysis)
+      ? "Testo PDF" as const
+      : options.deferOcrForVision
+        ? "Gemini Vision" as const
+        : "OCR" as const;
 
     return {
       filename,
       text: extractedText,
-      method: "OCR" as const,
-      pages: screenshots.pages.length,
-      warnings: [...warnings, ...ocrWarnings],
-      analysis: buildAnalysis(
-        "PDF",
-        extractedText,
-        "ocr",
-      ),
+      method,
+      pages: nativeResult.total || screenshots.pages.length,
+      warnings: isNativePdfTextUseful(nativeAnalysis)
+        ? warnings
+        : [...warnings, ...ocrWarnings],
+      analysis: isNativePdfTextUseful(nativeAnalysis)
+        ? nativeAnalysis
+        : buildAnalysis(
+            "PDF",
+            extractedText,
+            "ocr",
+          ),
       visionImages,
     };
   } finally {
@@ -252,6 +261,7 @@ function mimeTypeFromFilename(filename: string) {
 }
 
 async function createItalianWorker() {
+  const { createWorker, OEM } = await import("tesseract.js");
   return createWorker("ita", OEM.LSTM_ONLY, {
     workerPath: path.join(
       process.cwd(),

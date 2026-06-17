@@ -261,7 +261,7 @@ export async function enhanceReportWithGemini(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
     const endpoint = `${defaultEndpoint}/${encodeURIComponent(model)}:generateContent`;
