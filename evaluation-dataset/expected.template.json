@@ -1,0 +1,12 @@
+{
+  "sourceFiles": [],
+  "fields": {
+    "noticeNumber": "",
+    "plate": "",
+    "violationDate": "",
+    "amountReduced": "",
+    "amountOrdinary": "",
+    "articleCode": "",
+    "classification": ""
+  }
+}

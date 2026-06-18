@@ -284,12 +284,21 @@ function getProviderUsed(
 
 function hasMinimumUsefulData(report: ScreeningReport) {
   const data = report.identifiedData;
-  const hasPlace = hasValue(data.municipality) || hasValue(data.authority);
+  const hasDate =
+    hasValue(data.violationDate) ||
+    hasValue(data.assessmentDate) ||
+    hasValue(data.notificationDate);
+  const hasAmount =
+    hasValue(data.amount) ||
+    hasValue(data.reducedAmount) ||
+    hasValue(report.normalizedData.standardAmount) ||
+    hasValue(report.normalizedData.reducedAmount);
+
   return (
-    hasPlace &&
+    hasValue(data.reportNumber) &&
     hasValue(data.plate) &&
-    hasValue(data.amount) &&
-    hasValue(report.violationClassification.value)
+    hasDate &&
+    hasAmount
   );
 }
 
@@ -356,6 +365,8 @@ function flattenGeminiFields(parsed: GeminiVisionDebug["parsedOutput"] | undefin
     articleCode: parsed.articleCode,
     paragraph: parsed.paragraph,
     amount: parsed.amount,
+    reducedAmount: parsed.reducedAmount,
+    standardAmount: parsed.standardAmount,
     totalAmount: parsed.totalAmount,
     classification: parsed.classification,
     articles: parsed.articles,

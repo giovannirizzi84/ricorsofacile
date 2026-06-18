@@ -1,0 +1,23 @@
+{
+  "sourceFiles": [
+    "/Users/giovannirizzi/Downloads/IMG_6385.PNG",
+    "/Users/giovannirizzi/Downloads/IMG_6386.PNG"
+  ],
+  "fields": {
+    "noticeNumber": "862906/T",
+    "plate": "X6SCPX",
+    "violationDate": "18/10/2023",
+    "amountReduced": "42,40",
+    "amountOrdinary": "55,00",
+    "articleCode": {
+      "value": "7",
+      "readable": false,
+      "note": "Non leggibile con sufficiente certezza nelle due immagini disponibili."
+    },
+    "classification": {
+      "value": "Sosta / divieto di sosta",
+      "readable": false,
+      "note": "La pagina principale della violazione non e presente/leggibile; non penalizzare il modello."
+    }
+  }
+}

@@ -107,6 +107,7 @@ export type GeminiVisionOutput = {
   paragraph?: string;
   amount?: string;
   reducedAmount?: string;
+  standardAmount?: string;
   totalAmount?: string;
   points?: string;
   classification?: string;
@@ -114,6 +115,11 @@ export type GeminiVisionOutput = {
   notes?: string;
   additionalConsequence?: string;
   appealNote?: string;
+  pages?: Array<{
+    filename?: string;
+    pageType?: "MAIN_VERBALE" | "PAYMENT_NOTICE" | "RECOURSE_INFORMATION" | "OTHER";
+    usefulData?: string[];
+  }>;
 };
 
 export type GeminiVisionDebug = {
@@ -185,8 +191,9 @@ export async function analyzeImagesWithGeminiVision(
         ],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 1_024,
+          maxOutputTokens: 1_500,
           responseMimeType: "application/json",
+          responseSchema: visionResponseSchema,
         },
       }),
     });
@@ -518,8 +525,8 @@ function buildVisionPrompt(images: GeminiVisionImage[]) {
     /segmento\s+\d+/i.test(image.filename),
   );
   return `
-Analizza le immagini originali di un verbale italiano del Codice della Strada.
-Restituisci esclusivamente JSON valido. Non usare Markdown. Non aggiungere testo fuori dal JSON.
+Compila esclusivamente i campi dello schema JSON usando solo ciò che è leggibile nelle immagini di questo verbale o avviso di pagamento del Codice della Strada.
+Restituisci solo JSON valido. Non usare Markdown. Non aggiungere testo fuori dal JSON.
 
 ${hasLongReceiptSegments ? `FORMATO DOCUMENTO:
 Il documento è una foto verticale molto lunga, simile a uno scontrino o avviso di accertamento.
@@ -529,68 +536,14 @@ Cerca numero verbale, data, ora, luogo, targa, articoli, importi singoli, totale
 ` : ""}
 
 REGOLE:
-- usa solo ciò che vedi nelle immagini;
-- non inventare dati mancanti;
-- se un dato non è leggibile usa "${NOT_DETECTED}";
-- estrai anche articoli multipli, importi singoli e totale se presenti;
-- usa stringhe brevi.
-
-FORMATO ATTESO:
-{
-  "authority": "Comune di Bologna - Polizia Locale",
-  "municipality": "Bologna",
-  "noticeNumber": "635227-71",
-  "reportDate": "28/01/2026",
-  "violationDate": "28/01/2026",
-  "violationTime": "11:10",
-  "place": "Via del Borgo di S. Pietro",
-  "plate": "DZ923NZ",
-  "articles": [
-    {
-      "articleCode": "7",
-      "paragraph": "1",
-      "amount": "42,00",
-      "description": "sosta violando prescrizioni su tariffe orarie"
-    },
-    {
-      "articleCode": "158",
-      "paragraph": "2",
-      "amount": "42,00",
-      "description": "zona a traffico limitato priva di autorizzazione"
-    }
-  ],
-  "violations": [
-    {
-      "articleCode": "7",
-      "paragraph": "",
-      "description": "Sostava violando le prescrizioni su tariffe orarie",
-      "amount": "42,00",
-      "classification": "Sosta / tariffa non pagata"
-    },
-    {
-      "articleCode": "158",
-      "paragraph": "",
-      "description": "Sostava in zona a traffico limitato priva di autorizzazione",
-      "amount": "42,00",
-      "classification": "Sosta in ZTL / rimozione"
-    }
-  ],
-  "primaryArticle": "7/158",
-  "primaryClassification": "Sosta / Rimozione",
-  "articleCode": "7",
-  "paragraph": "1",
-  "amount": "93,60",
-  "totalAmount": "93,60",
-  "points": "${NOT_DETECTED}",
-  "classification": "Sosta / Rimozione",
-  "eventDescription": "Sosta in area soggetta a tariffa e zona a traffico limitato, con applicazione della rimozione del veicolo.",
-  "notes": "Non espone contrassegni",
-  "additionalConsequence": "Rimozione del veicolo",
-  "appealNote": "L'eventuale ricorso potrà essere proposto solo dopo la notifica del verbale."
-}
-
-IMMAGINI INVIATE:
-${images.map((image, index) => `${index + 1}. ${image.filename} (${image.mimeType})`).join("\n")}
+- usa stringa vuota se un campo non è leggibile;
+- non inventare articolo, luogo o classificazione;
+- noticeNumber = numero verbale, anche se scritto "Verbale nr.";
+- reportDate = data indicata vicino al numero verbale o all'emissione;
+- reducedAmount = importo entro 5 giorni dalla notifica;
+- standardAmount = importo dal 6° al 60° giorno dalla notifica;
+- classification = "Sosta / divieto di sosta" solo se il testo leggibile parla di sosta/divieto di sosta;
+- se una pagina PagoPA contiene importi e targa ma non articolo/luogo, estrai i dati leggibili e lascia vuoti gli altri.
 `.trim();
 }
 
@@ -661,6 +614,7 @@ ${output.plate ? `Targa: ${output.plate}` : ""}
 ${output.totalAmount ?? output.amount ? `Totale Euro ${output.totalAmount ?? output.amount}` : ""}
 ${articleLines.join("\n")}
 ${output.reducedAmount ? `Importo ridotto Euro ${output.reducedAmount}` : ""}
+${output.standardAmount ? `Importo ordinario Euro ${output.standardAmount}` : ""}
 ${output.points ? `Punti patente: ${output.points}` : ""}
 ${output.primaryArticle ? `Articolo principale: ${output.primaryArticle}` : ""}
 ${output.primaryClassification ?? output.classification ? `Tipo violazione: ${output.primaryClassification ?? output.classification}` : ""}
@@ -686,6 +640,7 @@ function parsePartialGeminiVisionOutput(value: string): GeminiVisionOutput | nul
     paragraph: extractJsonString(value, "paragraph"),
     amount: extractJsonString(value, "amount"),
     reducedAmount: extractJsonString(value, "reducedAmount"),
+    standardAmount: extractJsonString(value, "standardAmount"),
     totalAmount: extractJsonString(value, "totalAmount"),
     points: extractJsonString(value, "points"),
     primaryArticle: extractJsonString(value, "primaryArticle"),
@@ -716,6 +671,7 @@ function normalizeVisionOutput(output: GeminiVisionOutput | null) {
     output.paragraph,
     output.amount,
     output.reducedAmount,
+    output.standardAmount,
     output.totalAmount,
     output.points,
     output.primaryArticle,
@@ -820,6 +776,29 @@ function normalize(value: string) {
 }
 
 const confidenceEnum = ["Alta", "Media", "Bassa", "Non rilevato"];
+const visionResponseSchema = {
+  type: "object",
+  properties: {
+    municipality: { type: "string" },
+    noticeNumber: { type: "string" },
+    reportDate: { type: "string" },
+    plate: { type: "string" },
+    articleCode: { type: "string" },
+    reducedAmount: { type: "string" },
+    standardAmount: { type: "string" },
+    classification: { type: "string" },
+  },
+  required: [
+    "municipality",
+    "noticeNumber",
+    "reportDate",
+    "plate",
+    "articleCode",
+    "reducedAmount",
+    "standardAmount",
+    "classification",
+  ],
+};
 const extractedKeys = [
   "authority",
   "municipality",
