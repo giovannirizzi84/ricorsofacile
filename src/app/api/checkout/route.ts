@@ -38,6 +38,9 @@ export async function POST(request: Request) {
         service: "screening_ai",
         documentCount: String(payload.documentCount ?? 0),
       },
+      consent_collection: {
+        terms_of_service: "required",
+      },
       custom_text: {
         submit: {
           message:
