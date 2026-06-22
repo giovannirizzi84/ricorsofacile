@@ -1,0 +1,23 @@
+{
+  "sourceFiles": [
+    "/Users/giovannirizzi/Downloads/IMG_6357.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6358.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6359.JPG",
+    "/Users/giovannirizzi/Downloads/IMG_6360.JPG"
+  ],
+  "fields": {
+    "noticeNumber": "01698701/2021/1/1/1",
+    "plate": "GE264ZJ",
+    "violationDate": "24/10/2021",
+    "articleCode": "142",
+    "paragraph": "9",
+    "amountReduced": {
+      "value": "",
+      "readable": false,
+      "note": "Non presente nelle immagini disponibili."
+    },
+    "amountOrdinary": "740,32",
+    "points": "6",
+    "classification": "Autovelox / Eccesso di velocità"
+  }
+}

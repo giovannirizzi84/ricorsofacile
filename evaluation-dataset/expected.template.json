@@ -4,9 +4,11 @@
     "noticeNumber": "",
     "plate": "",
     "violationDate": "",
+    "articleCode": "",
+    "paragraph": "",
     "amountReduced": "",
     "amountOrdinary": "",
-    "articleCode": "",
+    "points": "",
     "classification": ""
   }
 }

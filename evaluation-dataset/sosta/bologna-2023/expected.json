@@ -14,6 +14,16 @@
       "readable": false,
       "note": "Non leggibile con sufficiente certezza nelle due immagini disponibili."
     },
+    "paragraph": {
+      "value": "",
+      "readable": false,
+      "note": "Non leggibile con sufficiente certezza nelle due immagini disponibili."
+    },
+    "points": {
+      "value": "",
+      "readable": false,
+      "note": "Non previsto/leggibile nelle immagini disponibili."
+    },
     "classification": {
       "value": "Sosta / divieto di sosta",
       "readable": false,

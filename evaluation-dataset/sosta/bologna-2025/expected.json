@@ -1,0 +1,25 @@
+{
+  "sourceFiles": [
+    "/Users/giovannirizzi/Downloads/IMG_6381.PNG",
+    "/Users/giovannirizzi/Downloads/IMG_6382.PNG"
+  ],
+  "fields": {
+    "noticeNumber": "659881/2025",
+    "plate": "X9PJTR",
+    "violationDate": "15/04/2025",
+    "articleCode": "7",
+    "paragraph": "1",
+    "amountReduced": "42,40",
+    "amountOrdinary": "55,00",
+    "points": {
+      "value": "",
+      "readable": false,
+      "note": "Non previsto/leggibile nel caso caricato."
+    },
+    "classification": {
+      "value": "ZTL / accesso area vietata",
+      "readable": true,
+      "note": "Classificazione corrente generata dalla pipeline per art. 7."
+    }
+  }
+}

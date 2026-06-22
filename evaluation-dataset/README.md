@@ -13,6 +13,11 @@ evaluation-dataset/
       expected.json
   ztl/
   sosta/
+  assicurazione/
+  revisione/
+  telefono/
+  corsia-bus/
+  semaforo/
   misto/
 ```
 
@@ -28,9 +33,11 @@ Esempio:
     "noticeNumber": "862906/T",
     "plate": "X6SCPX",
     "violationDate": "18/10/2023",
+    "articleCode": { "value": "7", "readable": false },
+    "paragraph": { "value": "", "readable": false },
     "amountReduced": "42,40",
     "amountOrdinary": "55,00",
-    "articleCode": { "value": "7", "readable": false },
+    "points": { "value": "", "readable": false },
     "classification": { "value": "Sosta / divieto di sosta", "readable": false }
   }
 }
@@ -44,9 +51,11 @@ Comando:
 
 ```bash
 npm run benchmark:dataset
+npm run benchmark:full
 ```
 
 Output:
 
 - `evaluation-results/benchmark-report.json`
 - `evaluation-results/benchmark-report.md`
+- `evaluation-results/quality-dashboard.md`

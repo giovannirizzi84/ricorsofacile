@@ -6,14 +6,25 @@ import {
 } from "../src/lib/analysis/analyzeDocument.ts";
 import { NOT_DETECTED, type ScreeningReport } from "../src/lib/screening-report.ts";
 
-type DatasetCategory = "autovelox" | "ztl" | "sosta" | "misto";
+type DatasetCategory =
+  | "autovelox"
+  | "ztl"
+  | "sosta"
+  | "assicurazione"
+  | "revisione"
+  | "telefono"
+  | "corsia-bus"
+  | "semaforo"
+  | "misto";
 type EvaluationField =
   | "noticeNumber"
   | "plate"
   | "violationDate"
+  | "articleCode"
+  | "paragraph"
   | "amountReduced"
   | "amountOrdinary"
-  | "articleCode"
+  | "points"
   | "classification";
 
 type ExpectedField =
@@ -55,6 +66,10 @@ type CaseResult = {
   fields: FieldResult[];
   failureReason: string;
   partialAnalysis: boolean;
+  providerError: boolean;
+  confidence: number;
+  confidenceBreakdown: Record<string, number>;
+  thresholdAction: "report_immediato" | "revision_pass_mirato" | "documento_incerto";
 };
 
 type FieldSummary = {
@@ -66,21 +81,42 @@ type FieldSummary = {
   readableAccuracy: number;
 };
 
-const categories: DatasetCategory[] = ["autovelox", "ztl", "sosta", "misto"];
+const categories: DatasetCategory[] = [
+  "autovelox",
+  "ztl",
+  "sosta",
+  "assicurazione",
+  "revisione",
+  "telefono",
+  "corsia-bus",
+  "semaforo",
+  "misto",
+];
 const fields: EvaluationField[] = [
   "noticeNumber",
   "plate",
   "violationDate",
+  "articleCode",
+  "paragraph",
   "amountReduced",
   "amountOrdinary",
-  "articleCode",
+  "points",
   "classification",
 ];
+const confidenceWeights = {
+  noticeNumber: 20,
+  plate: 20,
+  violationDate: 15,
+  articleCode: 15,
+  amounts: 15,
+  classification: 15,
+} as const;
 const supportedExtensions = new Set([".pdf", ".jpg", ".jpeg", ".png", ".webp"]);
 const datasetRoot = path.join(process.cwd(), "evaluation-dataset");
 const resultsRoot = path.join(process.cwd(), "evaluation-results");
 const jsonReportPath = path.join(resultsRoot, "benchmark-report.json");
 const markdownReportPath = path.join(resultsRoot, "benchmark-report.md");
+const qualityDashboardPath = path.join(resultsRoot, "quality-dashboard.md");
 
 await main();
 
@@ -97,6 +133,7 @@ async function main() {
   await mkdir(resultsRoot, { recursive: true });
   await writeFile(jsonReportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   await writeFile(markdownReportPath, renderMarkdown(report), "utf8");
+  await writeFile(qualityDashboardPath, renderQualityDashboard(report), "utf8");
   printReport(report);
 }
 
@@ -244,8 +281,12 @@ function actualValue(field: EvaluationField, report: ScreeningReport) {
       return report.normalizedData.standardAmount || report.identifiedData.amount;
     case "articleCode":
       return report.normalizedData.articleCode || report.identifiedData.article;
+    case "paragraph":
+      return report.normalizedData.paragraph || report.identifiedData.paragraph;
     case "classification":
       return report.violationClassification.value;
+    case "points":
+      return report.normalizedData.points?.toString() || report.identifiedData.licensePoints;
   }
 }
 
@@ -256,6 +297,14 @@ function valuesMatch(field: EvaluationField, actual: string, expected: string) {
 
   if (field === "violationDate") {
     return normalizeDate(actual) === normalizeDate(expected);
+  }
+
+  if (field === "noticeNumber") {
+    return normalizeNoticeNumber(actual) === normalizeNoticeNumber(expected);
+  }
+
+  if (field === "points") {
+    return normalizeToken(actual) === normalizeToken(expected);
   }
 
   return normalizeToken(actual).includes(normalizeToken(expected));
@@ -314,6 +363,7 @@ function buildCaseResult(
   const readableFields = fieldResults.filter((field) => field.readable);
   const correctFields = fieldResults.filter((field) => field.correct);
   const correctReadableFields = readableFields.filter((field) => field.correct);
+  const confidence = calculateConfidence(fieldResults);
   return {
     id: datasetCase.id,
     category: datasetCase.category,
@@ -330,6 +380,10 @@ function buildCaseResult(
     fields: fieldResults,
     failureReason,
     partialAnalysis: hasPartialUsefulResult(fieldResults),
+    providerError: isProviderError(analysis, failureReason),
+    confidence,
+    confidenceBreakdown: calculateConfidenceBreakdown(fieldResults),
+    thresholdAction: thresholdAction(confidence),
   };
 }
 
@@ -350,7 +404,9 @@ function inferFailureReason(
   fieldsResult: FieldResult[],
 ) {
   if (!analysis.processing.providerLog.visionAttempted) return "VISION_NOT_ATTEMPTED";
-  if (!analysis.processing.providerLog.geminiVision) return "GEMINI_VISION_FAILED";
+  if (analysis.processing.providerLog.providerUsed === "none") {
+    return "VISION_PROVIDER_FAILED";
+  }
   if (hasPartialUsefulResult(fieldsResult)) return "PARTIAL_ANALYSIS_COMPLETED";
   if (fieldsResult.some((field) => !field.correct)) return "FIELD_MISMATCH";
   return "NONE";
@@ -367,6 +423,8 @@ function buildReport(caseResults: CaseResult[]) {
     fields.map((field) => [field, summarizeField(caseResults, field)]),
   ) as Record<EvaluationField, FieldSummary>;
   const confusions = summarizeConfusions(caseResults);
+  const topErrors = summarizeTopErrors(caseResults);
+  const providerErrors = caseResults.filter((result) => result.providerError).length;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -376,12 +434,18 @@ function buildReport(caseResults: CaseResult[]) {
     categoryAccuracy,
     fieldAccuracy,
     confusions,
+    topErrors,
+    providerErrors,
+    providerErrorRate: percent(providerErrors, caseResults.length),
+    confidence: summarizeConfidence(caseResults),
     targets: {
-      launchDatasetSize: "30 verbali reali",
-      article: "> 95%",
+      launchDatasetSize: "50+ verbali reali",
+      readableAccuracy: "> 90%",
+      plate: "> 95%",
       amounts: "> 95%",
+      noticeNumber: "> 95%",
+      providerErrors: "< 1%",
       classification: "> 95%",
-      overall: "> 90%",
     },
   };
 }
@@ -455,6 +519,98 @@ function summarizeConfusions(caseResults: CaseResult[]) {
   return { counts, examples };
 }
 
+function summarizeTopErrors(caseResults: CaseResult[]) {
+  return caseResults
+    .flatMap((result) =>
+      result.fields
+        .filter((field) => !field.correct)
+        .map((field) => ({
+          caseId: result.id,
+          category: result.category,
+          field: field.field,
+          expected: field.expected,
+          actual: field.actual,
+          readable: field.readable,
+          confusion: field.confusion,
+        })),
+    )
+    .slice(0, 20);
+}
+
+function summarizeConfidence(caseResults: CaseResult[]) {
+  if (caseResults.length === 0) {
+    return {
+      average: 0,
+      reportImmediate: 0,
+      revisionPass: 0,
+      uncertain: 0,
+    };
+  }
+
+  return {
+    average: Number(
+      (
+        caseResults.reduce((total, result) => total + result.confidence, 0) /
+        caseResults.length
+      ).toFixed(2),
+    ),
+    reportImmediate: caseResults.filter(
+      (result) => result.thresholdAction === "report_immediato",
+    ).length,
+    revisionPass: caseResults.filter(
+      (result) => result.thresholdAction === "revision_pass_mirato",
+    ).length,
+    uncertain: caseResults.filter(
+      (result) => result.thresholdAction === "documento_incerto",
+    ).length,
+  };
+}
+
+function calculateConfidence(fieldResults: FieldResult[]) {
+  return Object.values(calculateConfidenceBreakdown(fieldResults)).reduce(
+    (total, value) => total + value,
+    0,
+  );
+}
+
+function calculateConfidenceBreakdown(fieldResults: FieldResult[]) {
+  const byField = new Map(fieldResults.map((field) => [field.field, field]));
+  const amountReduced = byField.get("amountReduced");
+  const amountOrdinary = byField.get("amountOrdinary");
+  const amountCorrect = Boolean(amountReduced?.correct || amountOrdinary?.correct);
+  return {
+    noticeNumber: scoreField(byField.get("noticeNumber"), confidenceWeights.noticeNumber),
+    plate: scoreField(byField.get("plate"), confidenceWeights.plate),
+    violationDate: scoreField(byField.get("violationDate"), confidenceWeights.violationDate),
+    articleCode: scoreField(byField.get("articleCode"), confidenceWeights.articleCode),
+    amounts: amountCorrect ? confidenceWeights.amounts : 0,
+    classification: scoreField(byField.get("classification"), confidenceWeights.classification),
+  };
+}
+
+function scoreField(field: FieldResult | undefined, points: number) {
+  if (!field) return 0;
+  if (!field.readable) return 0;
+  return field.correct ? points : 0;
+}
+
+function thresholdAction(confidence: number) {
+  if (confidence >= 90) return "report_immediato";
+  if (confidence >= 70) return "revision_pass_mirato";
+  return "documento_incerto";
+}
+
+function isProviderError(
+  analysis: AnalyzeUploadedDocumentsResult | null,
+  failureReason: string,
+) {
+  if (!analysis) return true;
+  return (
+    analysis.processing.providerLog.providerUsed === "none" ||
+    /PROVIDER|VISION_PROVIDER|FAILED|TIMEOUT/i.test(failureReason)
+  );
+}
+
 function renderMarkdown(report: ReturnType<typeof buildReport>) {
   const lines = [
     "# Benchmark MulteOnline",
@@ -466,6 +622,8 @@ function renderMarkdown(report: ReturnType<typeof buildReport>) {
     `- Casi analizzati: ${report.totals.cases}`,
     `- Accuracy totale: ${report.totals.totalAccuracy}%`,
     `- Accuracy campi leggibili: ${report.totals.readableAccuracy}%`,
+    `- Confidence media: ${report.confidence.average}`,
+    `- Errori provider: ${report.providerErrors} (${report.providerErrorRate}%)`,
     "",
     "## Accuracy Per Categoria",
     "",
@@ -508,6 +666,85 @@ function renderMarkdown(report: ReturnType<typeof buildReport>) {
   return `${lines.join("\n")}\n`;
 }
 
+function renderQualityDashboard(report: ReturnType<typeof buildReport>) {
+  const lines = [
+    "# MulteOnline Quality Dashboard",
+    "",
+    `Generato: ${report.generatedAt}`,
+    "",
+    "## Sintesi",
+    "",
+    `- Casi nel dataset: ${report.totals.cases}`,
+    `- Accuracy totale: ${report.totals.totalAccuracy}%`,
+    `- Accuracy campi leggibili: ${report.totals.readableAccuracy}%`,
+    `- Confidence media: ${report.confidence.average}/100`,
+    `- Errori provider: ${report.providerErrors} (${report.providerErrorRate}%)`,
+    "",
+    "## Confidence",
+    "",
+    `- Report immediato (>= 90): ${report.confidence.reportImmediate}`,
+    `- Revision pass mirato (70-89): ${report.confidence.revisionPass}`,
+    `- Documento incerto (< 70): ${report.confidence.uncertain}`,
+    "",
+    "## Accuracy Per Categoria",
+    "",
+    "| Categoria | Casi | Accuracy totale | Accuracy leggibili |",
+    "|---|---:|---:|---:|",
+    ...categories.map((category) => {
+      const item = report.categoryAccuracy[category];
+      return `| ${category} | ${item.cases} | ${item.totalAccuracy}% | ${item.readableAccuracy}% |`;
+    }),
+    "",
+    "## Accuracy Per Campo",
+    "",
+    "| Campo | Attesi | Leggibili | Accuracy totale | Accuracy leggibili |",
+    "|---|---:|---:|---:|---:|",
+    ...fields.map((field) => {
+      const item = report.fieldAccuracy[field];
+      return `| ${field} | ${item.expected} | ${item.readable} | ${item.totalAccuracy}% | ${item.readableAccuracy}% |`;
+    }),
+    "",
+    "## Top Errori",
+    "",
+  ];
+
+  if (report.topErrors.length === 0) {
+    lines.push("Nessun errore sui campi attesi del dataset corrente.");
+  } else {
+    lines.push("| Caso | Categoria | Campo | Atteso | Ottenuto | Confusione |");
+    lines.push("|---|---|---|---|---|---|");
+    for (const error of report.topErrors) {
+      lines.push(
+        `| ${error.caseId} | ${error.category} | ${error.field} | ${error.expected} | ${error.actual} | ${error.confusion ?? "-"} |`,
+      );
+    }
+  }
+
+  lines.push("", "## Confusioni", "");
+  if (Object.keys(report.confusions.counts).length === 0) {
+    lines.push("Nessuna confusione frequente rilevata.");
+  } else {
+    lines.push("| Confusione | Conteggio |", "|---|---:|");
+    for (const [confusion, count] of Object.entries(report.confusions.counts)) {
+      lines.push(`| ${confusion} | ${count} |`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Soglie Go-Live",
+    "",
+    "- Dataset: 50+ verbali reali",
+    "- Accuracy campi leggibili: > 90%",
+    "- Targa: > 95%",
+    "- Importi: > 95%",
+    "- Numero verbale: > 95%",
+    "- Errori provider: < 1%",
+  );
+
+  return `${lines.join("\n")}\n`;
+}
+
 function printReport(report: ReturnType<typeof buildReport>) {
   console.log("Benchmark dataset MulteOnline");
   console.log(`Casi analizzati: ${report.totals.cases}`);
@@ -527,6 +764,7 @@ function printReport(report: ReturnType<typeof buildReport>) {
   console.log("");
   console.log(`Report JSON: ${jsonReportPath}`);
   console.log(`Report MD: ${markdownReportPath}`);
+  console.log(`Quality dashboard: ${qualityDashboardPath}`);
 }
 
 async function loadLocalEnv() {
@@ -590,11 +828,42 @@ function normalizeAmount(value: string) {
   return match?.[0].replace(".", ",") ?? "";
 }
 
+function normalizeNoticeNumber(value: string) {
+  const token = normalizeToken(value);
+  return token.replace(/20\d{2}/g, "");
+}
+
 function normalizeDate(value: string) {
-  const match = value.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (!match) return "";
-  const year = match[3].length === 2 ? `20${match[3]}` : match[3];
-  return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}/${year}`;
+  const numericMatch = value.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (numericMatch) {
+    const year =
+      numericMatch[3].length === 2 ? `20${numericMatch[3]}` : numericMatch[3];
+    return `${numericMatch[1].padStart(2, "0")}/${numericMatch[2].padStart(2, "0")}/${year}`;
+  }
+
+  const monthMap: Record<string, string> = {
+    gennaio: "01",
+    febbraio: "02",
+    marzo: "03",
+    aprile: "04",
+    maggio: "05",
+    giugno: "06",
+    luglio: "07",
+    agosto: "08",
+    settembre: "09",
+    ottobre: "10",
+    novembre: "11",
+    dicembre: "12",
+  };
+  const textualMatch = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .match(
+      /(\d{1,2})\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})/,
+    );
+  if (!textualMatch) return "";
+  return `${textualMatch[1].padStart(2, "0")}/${monthMap[textualMatch[2]]}/${textualMatch[3]}`;
 }
 
 function percent(correct: number, total: number) {
