@@ -115,7 +115,7 @@ export type ScreeningReport = {
   aiEnhanced: boolean;
   rulesEngineUsed: boolean;
   aiExecution: {
-    provider: "Google Gemini";
+    provider: "Google Gemini" | "OpenAI GPT-4o";
     model: string;
     attempted: boolean;
     promptExecuted: boolean;

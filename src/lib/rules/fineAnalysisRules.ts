@@ -1657,10 +1657,12 @@ function findContextTime(text: string, contextPattern: RegExp) {
 
 function extractPlate(text: string) {
   const contextual =
-    text.match(/targa\s*[:\-]?\s*([A-Z0-9)\]\s]{6,10})/i)?.[1] ??
-    text.match(/veicolo\s+targato\s+([A-Z0-9)\]\s]{6,10})/i)?.[1];
+    text.match(/targa\s*[:\-]?\s*([A-Z0-9)\]](?:[ \t]?[A-Z0-9)\]]){4,9})/i)?.[1] ??
+    text.match(/veicolo\s+targato\s+([A-Z0-9)\]](?:[ \t]?[A-Z0-9)\]]){4,9})/i)?.[1];
   const normalizedContextual = normalizePlate(contextual);
   if (normalizedContextual) return normalizedContextual;
+  const contextualMotorcyclePlate = normalizeContextualPlate(contextual);
+  if (contextualMotorcyclePlate) return contextualMotorcyclePlate;
 
   return normalizePlate(
     text
@@ -1687,6 +1689,18 @@ function normalizePlate(value?: string) {
   if (extraDigit) return `${extraDigit[0]}${extraDigit[1]}`;
 
   return undefined;
+}
+
+function normalizeContextualPlate(value?: string) {
+  if (!value) return undefined;
+  const compact = value
+    .toUpperCase()
+    .replace(/\s/g, "")
+    .replace(/[)\]]/g, "J")
+    .replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z0-9]{5,8}$/.test(compact)) return undefined;
+  if (!/[A-Z]/.test(compact) || !/\d/.test(compact)) return undefined;
+  return compact;
 }
 
 function normalizeReportNumber(value?: string) {

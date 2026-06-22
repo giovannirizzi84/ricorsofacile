@@ -17,6 +17,8 @@
     "diagnose:bologna-2023": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/golden-bologna-2023-diagnostic.mts",
     "diagnose:api-bologna": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/diagnose-api-bologna.mts",
     "benchmark:dataset": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/benchmark-dataset.mts",
+    "benchmark:gpt4o": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/benchmark-gpt4o.mts",
+    "benchmark:compare": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/benchmark-compare.mts",
     "evaluate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/evaluate-dataset.mts"
   },
   "dependencies": {

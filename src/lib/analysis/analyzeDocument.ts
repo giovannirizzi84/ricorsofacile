@@ -2,9 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   analyzeImagesWithGeminiVision,
-  enhanceReportWithGemini,
   type GeminiVisionDebug,
 } from "../ai/geminiClient.ts";
+import {
+  analyzeImagesWithOpenAIVision,
+  renderOpenAIVisionOutput,
+  type OpenAIVisionDebug,
+} from "../ai/openaiClient.ts";
 import {
   extractDocuments,
   type ExtractedDocument,
@@ -25,6 +29,7 @@ export type AnalysisProviderLog = {
   documentCount: number;
   parser: boolean;
   geminiVision: boolean;
+  openaiVision: boolean;
   fallback: boolean;
   ocrRecovery: boolean;
   ocrRecoveryAttempted: boolean;
@@ -32,7 +37,16 @@ export type AnalysisProviderLog = {
   visionAttempted: boolean;
   visionStatus: string;
   geminiDurationMs: number;
-  providerUsed: "geminiVision" | "parser" | "ocrFallback" | "none";
+  openaiAttempted: boolean;
+  openaiStatus: string;
+  openaiDurationMs: number;
+  openaiCostEstimate: number;
+  openaiUsage: Record<string, unknown> | null;
+  openaiImageCount: number;
+  openaiImagePayloadBytes: number;
+  geminiFallbackAttempted: boolean;
+  geminiFallbackStatus: string;
+  providerUsed: "openaiVision" | "geminiVision" | "parser" | "ocrFallback" | "none";
   failureReason: string;
   documents: Array<{
     filename: string;
@@ -77,8 +91,11 @@ export type AnalyzeUploadedDocumentsResult = {
     documents: ExtractedDocument[];
     providerLog: AnalysisProviderLog;
     visionDebug?: GeminiVisionDebug;
+    openaiDebug?: OpenAIVisionDebug;
     ruleReport: ScreeningReport;
     finalReport: ScreeningReport;
+    openaiRawJson: unknown;
+    openaiExtractedFields: Record<string, unknown>;
     geminiRawJson: unknown;
     geminiExtractedFields: Record<string, unknown>;
     finalExtractedFields: Record<string, string>;
@@ -109,18 +126,47 @@ export async function analyzeUploadedDocuments(
     ocrEnabled: !productionRuntime,
   });
   const visionImages = documents.flatMap((document) => document.visionImages);
-  const geminiStart = Date.now();
-  const visionResult = await analyzeImagesWithGeminiVision(visionImages);
-  const geminiDurationMs = Date.now() - geminiStart;
+  const pdfTextContext = documents.map((document) => document.text).join("\n\n");
+  const openaiStart = Date.now();
+  const openaiResult = await analyzeImagesWithOpenAIVision(visionImages, {
+    pdfTextContext,
+    timeoutMs: 45_000,
+  });
+  const openaiDurationMs = Date.now() - openaiStart;
+  let geminiDurationMs = 0;
+  let geminiFallbackAttempted = false;
+  let visionResult: Awaited<ReturnType<typeof analyzeImagesWithGeminiVision>> = {
+    available: false,
+    attempted: false,
+    model: process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
+    text: "",
+    status: "Provider non disponibile",
+  };
+  let providerText = openaiResult.available
+    ? renderOpenAIVisionOutput(openaiResult.output)
+    : "";
+
+  if (!openaiResult.available && visionImages.length > 0) {
+    geminiFallbackAttempted = true;
+    const geminiStart = Date.now();
+    visionResult = await analyzeImagesWithGeminiVision(visionImages);
+    geminiDurationMs = Date.now() - geminiStart;
+    providerText = visionResult.available ? visionResult.text : "";
+  }
+
   let ocrRecoveryUsed = false;
   let ocrRecoveryAttempted = false;
   let ocrRecoverySkippedReason = "";
   let failureReason = "";
 
-  if (shouldUseOcrRecovery(visionResult.text, documents)) {
+  if (shouldUseOcrRecovery(providerText, documents)) {
     if (productionRuntime) {
       ocrRecoverySkippedReason = "disabled_in_production";
-      failureReason = "GEMINI_FAILED_NO_OCR_IN_PRODUCTION";
+      failureReason = openaiResult.available
+        ? "OCR_RECOVERY_DISABLED_IN_PRODUCTION"
+        : geminiFallbackAttempted
+          ? "OPENAI_AND_GEMINI_FAILED_NO_OCR_IN_PRODUCTION"
+          : "OPENAI_FAILED_NO_OCR_IN_PRODUCTION";
     } else if (ocrRecoveryEnabled) {
       ocrRecoveryAttempted = true;
       documents = await extractDocuments(files, {
@@ -138,15 +184,30 @@ export async function analyzeUploadedDocuments(
     inputType: getInputType(files),
     documentCount: files.length,
     parser: documents.some((document) => document.method === "Testo PDF"),
+    openaiVision: openaiResult.available,
     geminiVision: visionResult.available,
-    fallback: !visionResult.available || ocrRecoveryUsed,
+    fallback: !openaiResult.available || visionResult.available || ocrRecoveryUsed,
     ocrRecovery: ocrRecoveryUsed,
     ocrRecoveryAttempted,
     ocrRecoverySkippedReason,
-    visionAttempted: visionResult.attempted,
-    visionStatus: visionResult.status,
+    visionAttempted: openaiResult.attempted || visionResult.attempted,
+    visionStatus: openaiResult.status,
     geminiDurationMs,
-    providerUsed: getProviderUsed(visionResult.available, ocrRecoveryUsed, documents),
+    openaiAttempted: openaiResult.attempted,
+    openaiStatus: openaiResult.status,
+    openaiDurationMs,
+    openaiCostEstimate: openaiResult.debug.estimatedCostEur,
+    openaiUsage: openaiResult.debug.usage,
+    openaiImageCount: openaiResult.debug.imageCount,
+    openaiImagePayloadBytes: openaiResult.debug.imagePayloadBytes,
+    geminiFallbackAttempted,
+    geminiFallbackStatus: visionResult.status,
+    providerUsed: getProviderUsed(
+      openaiResult.available,
+      visionResult.available,
+      ocrRecoveryUsed,
+      documents,
+    ),
     failureReason,
     documents: documents.map((document) => ({
       filename: document.filename,
@@ -157,7 +218,7 @@ export async function analyzeUploadedDocuments(
     })),
   };
 
-  const extractedText = buildExtractedText(documents, visionResult.text);
+  const extractedText = buildExtractedText(documents, providerText, providerLog.providerUsed);
   const usedOcr = documents.some((document) => document.method === "OCR");
   const warnings = documents.flatMap((document) => document.warnings);
   const ruleReport = analyzeFineText(extractedText, caseData, {
@@ -166,11 +227,13 @@ export async function analyzeUploadedDocuments(
   });
   const unreliableProductionAnalysis =
     productionRuntime &&
-    providerLog.failureReason === "GEMINI_FAILED_NO_OCR_IN_PRODUCTION" &&
+    /NO_OCR_IN_PRODUCTION|OCR_RECOVERY_DISABLED_IN_PRODUCTION/.test(
+      providerLog.failureReason,
+    ) &&
     !hasMinimumUsefulData(ruleReport);
   const finalReport = unreliableProductionAnalysis
     ? createControlledUnreliableReport(ruleReport)
-    : await enhanceReportWithGemini(extractedText, ruleReport);
+    : markAiExecution(ruleReport, openaiResult, visionResult, providerLog);
   const durationMs = Date.now() - analysisStart;
   const diagnostics = {
     analysisId,
@@ -179,8 +242,11 @@ export async function analyzeUploadedDocuments(
     documents,
     providerLog,
     visionDebug: visionResult.debug,
+    openaiDebug: openaiResult.debug,
     ruleReport,
     finalReport,
+    openaiRawJson: openaiResult.debug.parsedOutput ?? null,
+    openaiExtractedFields: flattenOpenAIFields(openaiResult.debug.parsedOutput),
     geminiRawJson: visionResult.debug?.parsedOutput ?? null,
     geminiExtractedFields: flattenGeminiFields(visionResult.debug?.parsedOutput),
     finalExtractedFields: flattenReportFields(finalReport),
@@ -203,10 +269,10 @@ export async function analyzeUploadedDocuments(
       })),
       aiEnhanced: finalReport.aiEnhanced,
       vision: {
-        attempted: visionResult.attempted,
-        available: visionResult.available,
-        model: visionResult.model,
-        status: visionResult.status,
+        attempted: openaiResult.attempted || visionResult.attempted,
+        available: openaiResult.available || visionResult.available,
+        model: openaiResult.available ? openaiResult.model : visionResult.model,
+        status: openaiResult.available ? openaiResult.status : visionResult.status,
       },
       providerLog,
       durationMs,
@@ -244,7 +310,11 @@ export function shouldUseOcrRecovery(
   return usefulSignals < 3;
 }
 
-function buildExtractedText(documents: ExtractedDocument[], visionText: string) {
+function buildExtractedText(
+  documents: ExtractedDocument[],
+  visionText: string,
+  providerUsed: AnalysisProviderLog["providerUsed"],
+) {
   const documentText = documents
     .map(
       (document, index) =>
@@ -254,7 +324,7 @@ function buildExtractedText(documents: ExtractedDocument[], visionText: string) 
 
   return [
     visionText &&
-      `DOCUMENTO: Gemini Vision\nMETODO: Gemini Vision\n${visionText}`,
+      `DOCUMENTO: Analisi visiva\nMETODO: ${providerUsed === "openaiVision" ? "OpenAI Vision" : "Gemini Vision"}\n${visionText}`,
     documentText,
   ]
     .filter(Boolean)
@@ -272,14 +342,46 @@ function getInputType(files: File[]) {
 }
 
 function getProviderUsed(
+  openaiAvailable: boolean,
   visionAvailable: boolean,
   ocrRecoveryUsed: boolean,
   documents: ExtractedDocument[],
 ): AnalysisProviderLog["providerUsed"] {
+  if (openaiAvailable) return "openaiVision";
   if (visionAvailable) return "geminiVision";
   if (ocrRecoveryUsed) return "ocrFallback";
   if (documents.some((document) => document.method === "Testo PDF")) return "parser";
   return "none";
+}
+
+function markAiExecution(
+  report: ScreeningReport,
+  openaiResult: Awaited<ReturnType<typeof analyzeImagesWithOpenAIVision>>,
+  geminiResult: Awaited<ReturnType<typeof analyzeImagesWithGeminiVision>>,
+  providerLog: AnalysisProviderLog,
+): ScreeningReport {
+  const usedOpenAI = providerLog.providerUsed === "openaiVision";
+  const usedGemini = providerLog.providerUsed === "geminiVision";
+
+  return {
+    ...report,
+    aiEnhanced: usedOpenAI || usedGemini,
+    rulesEngineUsed: true,
+    aiExecution: {
+      provider: usedOpenAI ? "OpenAI GPT-4o" : "Google Gemini",
+      model: usedOpenAI ? openaiResult.model : geminiResult.model,
+      attempted: openaiResult.attempted || geminiResult.attempted,
+      promptExecuted: usedOpenAI || usedGemini,
+      fallbackUsed: !usedOpenAI,
+      status: usedOpenAI
+        ? openaiResult.status
+        : usedGemini
+          ? geminiResult.status
+          : openaiResult.status === "Chiave non configurata"
+            ? "Chiave non configurata"
+            : "Provider non disponibile",
+    },
+  };
 }
 
 function hasMinimumUsefulData(report: ScreeningReport) {
@@ -324,6 +426,8 @@ function createControlledUnreliableReport(report: ScreeningReport) {
     rulesEngineUsed: true,
     aiExecution: {
       ...report.aiExecution,
+      provider: "OpenAI GPT-4o" as const,
+      model: process.env.OPENAI_MODEL?.trim() || "gpt-4o",
       attempted: true,
       promptExecuted: false,
       fallbackUsed: true,
@@ -374,6 +478,27 @@ function flattenGeminiFields(parsed: GeminiVisionDebug["parsedOutput"] | undefin
   };
 }
 
+function flattenOpenAIFields(parsed: OpenAIVisionDebug["parsedOutput"] | null) {
+  if (!parsed) return {};
+  return {
+    authority: parsed.authority,
+    municipality: parsed.municipality,
+    noticeNumber: parsed.noticeNumber,
+    plate: parsed.plate,
+    violationDate: parsed.violationDate,
+    violationTime: parsed.violationTime,
+    place: parsed.place,
+    amountReduced: parsed.amountReduced,
+    amountOrdinary: parsed.amountOrdinary,
+    amount: parsed.amount,
+    articleCode: parsed.articleCode,
+    paragraph: parsed.paragraph,
+    points: parsed.points,
+    classification: parsed.classification,
+    eventDescription: parsed.eventDescription,
+  };
+}
+
 function flattenReportFields(report: ScreeningReport) {
   return Object.fromEntries(
     report.extractedData.map((field) => [field.key, field.value]),
@@ -408,6 +533,8 @@ async function saveLiveDebug(
           visionImages: document.visionImages.length,
         })),
         providerLog: diagnostics.providerLog,
+        openaiRawJson: diagnostics.openaiRawJson,
+        openaiExtractedFields: diagnostics.openaiExtractedFields,
         geminiRawJson: diagnostics.geminiRawJson,
         geminiExtractedFields: diagnostics.geminiExtractedFields,
         rulesOutput: {
