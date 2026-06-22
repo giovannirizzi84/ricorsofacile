@@ -30,6 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { generateScreeningReportPdf } from "@/lib/pdf/screeningReportPdf";
+import { savePendingScreening } from "@/lib/payments/pendingScreening";
 import type { ScreeningReport } from "@/lib/screening-report";
 
 const stepLabels = [
@@ -46,8 +47,9 @@ type CaseData = {
   violationType: string;
 };
 
-type AnalyzePayload = {
-  report?: ScreeningReport;
+type CheckoutPayload = {
+  checkoutUrl?: string;
+  sessionId?: string;
   error?: string;
 };
 
@@ -68,7 +70,6 @@ export function ScreeningFlow() {
   );
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
-  const [report, setReport] = useState<ScreeningReport | null>(null);
   const [error, setError] = useState("");
 
   function updateCaseData(key: keyof CaseData, value: string) {
@@ -82,7 +83,7 @@ export function ScreeningFlow() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function analyze() {
+  async function startCheckout() {
     if (
       processing ||
       !privacyAccepted ||
@@ -94,85 +95,36 @@ export function ScreeningFlow() {
 
     setError("");
     setProcessing(true);
-    setProcessingStage("Analisi del documento in corso…");
-    const controller = new AbortController();
-    const stageTimers = [
-      window.setTimeout(
-        () => setProcessingStage("Lettura delle informazioni principali…"),
-        2500,
-      ),
-      window.setTimeout(
-        () => setProcessingStage("Valutazione preliminare in corso…"),
-        5000,
-      ),
-      window.setTimeout(
-        () => setProcessingStage("Generazione report…"),
-        7500,
-      ),
-      window.setTimeout(
-        () =>
-          setProcessingStage(
-            "Il documento è complesso: stiamo ancora completando l’analisi…",
-          ),
-        30000,
-      ),
-      window.setTimeout(() => controller.abort(), 120000),
-    ];
+    setProcessingStage("Preparazione pagamento sicuro…");
 
     try {
-      const body = new FormData();
-      for (const file of files) body.append("files", file);
-      for (const [key, value] of Object.entries(caseData)) {
-        body.append(key, value);
-      }
-
-      const response = await fetch("/api/analyze", {
+      const response = await fetch("/api/checkout", {
         method: "POST",
-        body,
-        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentCount: files.length }),
       });
-      const payload = await readAnalyzePayload(response);
+      const payload = (await response.json()) as CheckoutPayload;
 
-      if (!response.ok || !payload.report) {
-        throw new Error(payload.error || "Analisi non completata.");
+      if (!response.ok || !payload.checkoutUrl || !payload.sessionId) {
+        throw new Error(payload.error || "Pagamento non avviato.");
       }
 
-      setReport(payload.report);
-      setStep(3);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      await savePendingScreening({
+        sessionId: payload.sessionId,
+        files,
+        caseData,
+        createdAt: new Date().toISOString(),
+      });
+
+      window.location.href = payload.checkoutUrl;
     } catch (analysisError) {
       setError(
-        analysisError instanceof DOMException &&
-          analysisError.name === "AbortError"
-          ? "L'analisi sta impiegando troppo tempo. Prova a caricare un'immagine più nitida e ritagliata sul verbale, oppure un PDF."
-          : analysisError instanceof Error
-            ? analysisError.message
-            : "Non è stato possibile completare l'analisi.",
+        analysisError instanceof Error
+          ? analysisError.message
+          : "Non è stato possibile avviare il pagamento.",
       );
     } finally {
-      stageTimers.forEach((timer) => window.clearTimeout(timer));
       setProcessing(false);
-    }
-  }
-
-  async function readAnalyzePayload(response: Response): Promise<AnalyzePayload> {
-    const raw = await response.text();
-    if (!raw.trim()) {
-      return {
-        error:
-          "Il server non ha restituito una risposta valida. Riprova tra poco o carica un file più leggero.",
-      };
-    }
-
-    try {
-      return JSON.parse(raw) as AnalyzePayload;
-    } catch {
-      return {
-        error:
-          response.ok
-            ? "La risposta dell'analisi non è leggibile. Riprova con un file più nitido."
-            : "Il server ha interrotto l'analisi. Riprova con un file più nitido o in formato PDF.",
-      };
     }
   }
 
@@ -381,6 +333,23 @@ export function ScreeningFlow() {
                         text="Comprendo che il risultato è preliminare, può contenere errori e non costituisce parere legale, consulenza professionale o garanzia di accoglimento di un eventuale ricorso."
                       />
                     </div>
+                    <p className="mt-5 text-xs leading-6 text-slate-500">
+                      Procedendo al pagamento accetti i{" "}
+                      <Link
+                        href="/termini"
+                        className="font-medium text-[#0f756d] underline-offset-4 hover:underline"
+                      >
+                        Termini e Condizioni
+                      </Link>{" "}
+                      e confermi di aver letto la{" "}
+                      <Link
+                        href="/privacy"
+                        className="font-medium text-[#0f756d] underline-offset-4 hover:underline"
+                      >
+                        Privacy Policy
+                      </Link>
+                      .
+                    </p>
                     {error && (
                       <div
                         role="alert"
@@ -393,13 +362,13 @@ export function ScreeningFlow() {
                     <Actions
                       step={step}
                       onBack={() => setStep(1)}
-                      onNext={analyze}
+                      onNext={startCheckout}
                       nextDisabled={
                         !privacyAccepted ||
                         !disclaimerAccepted ||
                         processing
                       }
-                      nextLabel="Avvia analisi"
+                      nextLabel="Paga 0,99 € e avvia analisi"
                     />
                   </div>
                 )}
@@ -407,8 +376,6 @@ export function ScreeningFlow() {
             </Card>
             <AsideSummary step={step} files={files.length} />
           </div>
-        ) : report ? (
-          <Report report={report} />
         ) : null}
       </div>
 
@@ -418,8 +385,8 @@ export function ScreeningFlow() {
             <LoaderCircle className="mx-auto size-12 animate-spin text-lime-300" />
             <h2 className="mt-6 text-2xl font-semibold">{processingStage}</h2>
             <p className="mt-3 text-sm leading-6 text-white/65">
-              Stiamo esaminando il verbale e preparando il report preliminare.
-              L’operazione può richiedere circa un minuto.
+              Verrai reindirizzato a Stripe Checkout. Dopo il pagamento
+              tornerai su MulteOnline per generare il report.
             </p>
           </div>
         </div>
@@ -557,7 +524,7 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
   );
 }
 
-function Report({ report }: { report: ScreeningReport }) {
+export function ScreeningReportView({ report }: { report: ScreeningReport }) {
   const accent =
     report.outcome === "Alto interesse all’approfondimento"
       ? "border-amber-200 bg-amber-50/40 text-amber-950"

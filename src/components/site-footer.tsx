@@ -26,6 +26,7 @@ export function SiteFooter() {
             <Link href="/faq" className="hover:text-white">FAQ</Link>
             <Link href="/privacy" className="hover:text-white">Privacy policy</Link>
             <Link href="/termini" className="hover:text-white">Termini e condizioni</Link>
+            <Link href="/contatti" className="hover:text-white">Contatti</Link>
             <Link href="/disclaimer" className="hover:text-white">Disclaimer legale</Link>
           </div>
         </div>

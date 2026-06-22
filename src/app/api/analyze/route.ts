@@ -3,7 +3,12 @@ import {
   analyzeUploadedDocuments,
   type AnalyzeUploadedDocumentsResult,
 } from "../../../lib/analysis/analyzeDocument.ts";
+import {
+  isPaymentBypassAllowedForTests,
+  verifyPaidCheckoutSession,
+} from "../../../lib/payments/paymentTracking.ts";
 import type { FineCaseData } from "../../../lib/rules/fineAnalysisRules.ts";
+import { persistScreening } from "../../../lib/supabase/screeningsRepository.ts";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +37,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
+    const paymentSessionId = readText(formData, "paymentSessionId", 200);
+    const paymentValidation = await validatePayment(paymentSessionId);
+    if (!paymentValidation.valid) {
+      console.warn("Analysis blocked because payment is not valid", {
+        analysisId,
+        reason: paymentValidation.reason,
+      });
+      return NextResponse.json(
+        {
+          error:
+            "Pagamento non verificato. Completa il pagamento dello screening prima di avviare l’analisi.",
+        },
+        { status: 402 },
+      );
+    }
+
     const caseData: FineCaseData = {
       notificationDate: readText(formData, "notificationDate"),
       authority: readText(formData, "authority"),
@@ -44,10 +65,16 @@ export async function POST(request: Request) {
       debug: process.env.DEBUG_ANALYSIS === "true",
     });
     logAnalysisResult(result);
+    const persistence = await saveScreeningReport(
+      result,
+      paymentValidation.record,
+    );
 
     return NextResponse.json({
       report: result.report,
       processing: result.processing,
+      screeningId: persistence.screeningId,
+      persistence,
     });
   } catch (error) {
     console.error("Local screening analysis failed", {
@@ -100,9 +127,56 @@ function validateFiles(files: File[]) {
   return null;
 }
 
-function readText(formData: FormData, key: string) {
+async function validatePayment(paymentSessionId: string) {
+  if (isPaymentBypassAllowedForTests()) {
+    return {
+      valid: true,
+      reason: "test_bypass",
+      record: {
+        sessionId: "cs_test_bypass",
+        amount: 99,
+        currency: "eur",
+        createdAt: new Date().toISOString(),
+        status: "paid",
+        email: null,
+      },
+    } as const;
+  }
+
+  return verifyPaidCheckoutSession(paymentSessionId);
+}
+
+async function saveScreeningReport(
+  result: AnalyzeUploadedDocumentsResult,
+  payment: Awaited<ReturnType<typeof validatePayment>>["record"],
+) {
+  if (!payment) {
+    return {
+      saved: false,
+      screeningId: null,
+      paymentId: null,
+      reason: "payment_record_missing",
+    };
+  }
+
+  return persistScreening({
+    payment: {
+      stripeSessionId: payment.sessionId,
+      amount: payment.amount,
+      currency: payment.currency,
+      status: payment.status,
+      createdAt: payment.createdAt,
+    },
+    email: payment.email,
+    provider: result.processing.providerLog.providerUsed,
+    confidence: result.report.confidence,
+    report: result.report,
+  });
+}
+
+function readText(formData: FormData, key: string, maxLength = 500) {
   const value = formData.get(key);
-  return typeof value === "string" ? value.trim().slice(0, 500) : "";
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
 function logAnalysisResult(result: AnalyzeUploadedDocumentsResult) {
