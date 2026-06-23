@@ -9,6 +9,10 @@ export type ConsultationAttachment = {
   name: string;
   type: string;
   size: number;
+  storageBucket?: string;
+  storagePath?: string;
+  downloadUrl?: string;
+  storageStatus?: "stored" | "email_only";
 };
 
 export type ConsultationRequestInput = {
@@ -77,6 +81,7 @@ export type AdminStats = {
 };
 
 const memoryConsultations = new Map<string, ConsultationRequestRow>();
+const consultationAttachmentBucket = "consultation-attachments";
 
 export async function createConsultationRequest(
   input: ConsultationRequestInput,
@@ -192,7 +197,9 @@ export async function loadAdminStats(): Promise<
 
   const screenings = screeningsResult.data ?? [];
   const payments = paymentsResult.data ?? [];
-  const consultations = (consultationsResult.data ?? []) as ConsultationRequestRow[];
+  const consultations = await withSignedAttachmentUrls(
+    (consultationsResult.data ?? []) as ConsultationRequestRow[],
+  );
 
   const revenueTotalCents = payments.reduce(
     (sum, payment) => sum + Number(payment.amount ?? 0),
@@ -257,6 +264,56 @@ export function resetConsultationMemoryStoreForTests() {
   memoryConsultations.clear();
 }
 
+export async function storeConsultationAttachments(files: File[]) {
+  if (isSupabaseMemoryTestMode()) {
+    return files.map((file) => ({
+      ...fileMetadataFromFile(file),
+      storageBucket: consultationAttachmentBucket,
+      storagePath: `memory/${crypto.randomUUID()}-${sanitizeFileName(file.name)}`,
+      downloadUrl: "#",
+      storageStatus: "stored" as const,
+    }));
+  }
+
+  if (!isSupabaseConfigured() || files.length === 0) {
+    return files.map((file) => ({
+      ...fileMetadataFromFile(file),
+      storageStatus: "email_only" as const,
+    }));
+  }
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    await ensureConsultationAttachmentBucket();
+
+    const stored: ConsultationAttachment[] = [];
+    for (const file of files) {
+      const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${sanitizeFileName(file.name)}`;
+      const { error } = await supabase.storage
+        .from(consultationAttachmentBucket)
+        .upload(storagePath, Buffer.from(await file.arrayBuffer()), {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
+      if (error) throw error;
+
+      stored.push({
+        ...fileMetadataFromFile(file),
+        storageBucket: consultationAttachmentBucket,
+        storagePath,
+        storageStatus: "stored",
+      });
+    }
+    return stored;
+  } catch (error) {
+    console.error("Consultation attachment storage failed", { error });
+    return files.map((file) => ({
+      ...fileMetadataFromFile(file),
+      storageStatus: "email_only" as const,
+    }));
+  }
+}
+
 function createMemoryConsultation(
   input: ConsultationRequestInput,
 ): ConsultationRequestRow {
@@ -277,6 +334,26 @@ function createMemoryConsultation(
     attachments_json: input.attachments,
     status: "new",
   };
+}
+
+async function withSignedAttachmentUrls(rows: ConsultationRequestRow[]) {
+  if (rows.length === 0 || !isSupabaseConfigured()) return rows;
+  const supabase = getSupabaseServiceClient();
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      attachments_json: await Promise.all(
+        (row.attachments_json ?? []).map(async (attachment) => {
+          if (!attachment.storageBucket || !attachment.storagePath) return attachment;
+          const { data, error } = await supabase.storage
+            .from(attachment.storageBucket)
+            .createSignedUrl(attachment.storagePath, 60 * 30);
+          if (error || !data?.signedUrl) return attachment;
+          return { ...attachment, downloadUrl: data.signedUrl };
+        }),
+      ),
+    })),
+  );
 }
 
 function buildMemoryStats(): AdminStats {
@@ -323,6 +400,37 @@ function readReportValue(value: unknown, path: string[]) {
 function nullable(value?: string | null) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+async function ensureConsultationAttachmentBucket() {
+  const supabase = getSupabaseServiceClient();
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+  if (listError) throw listError;
+  if (buckets?.some((bucket) => bucket.name === consultationAttachmentBucket)) return;
+
+  const { error } = await supabase.storage.createBucket(consultationAttachmentBucket, {
+    public: false,
+    fileSizeLimit: 15 * 1024 * 1024,
+    allowedMimeTypes: ["application/pdf", "image/jpeg", "image/png"],
+  });
+  if (error) throw error;
+}
+
+function fileMetadataFromFile(file: File): ConsultationAttachment {
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  };
+}
+
+function sanitizeFileName(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 120) || "allegato";
 }
 
 function startOfTodayIso() {

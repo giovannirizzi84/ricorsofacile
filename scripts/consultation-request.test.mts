@@ -12,7 +12,6 @@ test("consultation-request.test", async () => {
     formData.set("firstName", "Mario");
     formData.set("lastName", "Rossi");
     formData.set("email", "mario@example.com");
-    formData.set("phone", "+393330000000");
     formData.set("consultationType", "Consulenza scritta");
     formData.set("noticeNumber", "TEST-123");
     formData.set("authority", "Comune di Test");
@@ -52,6 +51,9 @@ test("consultation-request.test", async () => {
     if (stats.configured) {
       assert.equal(stats.stats.consultations.total, 1);
       assert.equal(stats.stats.consultations.new, 1);
+      assert.equal(stats.stats.consultations.latest[0]?.attachments_json.length, 1);
+      assert.equal(stats.stats.consultations.latest[0]?.attachments_json[0]?.name, "report.pdf");
+      assert.equal(stats.stats.consultations.latest[0]?.attachments_json[0]?.storageStatus, "stored");
     }
   });
 });

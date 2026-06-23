@@ -7,6 +7,7 @@ import {
   createConsultationRequest,
   type ConsultationAttachment,
   type ConsultationRequestInput,
+  storeConsultationAttachments,
 } from "../../../lib/supabase/consultationsRepository.ts";
 
 export const runtime = "nodejs";
@@ -16,11 +17,10 @@ const allowedAttachmentTypes = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
-  "image/webp",
 ]);
-const maxFiles = 6;
-const maxFileSize = 8 * 1024 * 1024;
-const maxEmailAttachmentBytes = 6 * 1024 * 1024;
+const maxFiles = 10;
+const maxFileSize = 15 * 1024 * 1024;
+const maxEmailAttachmentBytes = 20 * 1024 * 1024;
 
 export async function POST(request: Request) {
   try {
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: attachmentError }, { status: 400 });
     }
 
-    const attachments = files.map(fileMetadata);
+    const attachments = await storeConsultationAttachments(files);
     const requestInput: ConsultationRequestInput = {
       ...input,
       attachments,
@@ -49,8 +49,18 @@ export async function POST(request: Request) {
     const email = await sendConsultationEmail({
       ...requestInput,
       id: persistence.id,
-      attachmentsForEmail: await buildEmailAttachments(files),
+      attachmentsForEmail: await buildEmailAttachments(files, attachments),
     });
+
+    if (!email.sent) {
+      console.warn("Consultation request accepted but email was not sent", {
+        reason: email.reason,
+        consultationId: persistence.id,
+        hasFromEmail: Boolean(process.env.CONSULTATION_FROM_EMAIL?.trim()),
+        hasResendApiKey: Boolean(process.env.RESEND_API_KEY?.trim()),
+        hasToEmail: Boolean(process.env.CONSULTATION_TO_EMAIL?.trim()),
+      });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Non è stato possibile inviare la richiesta. Riprova tra poco o contattaci via email.",
+          "Si è verificato un problema durante l’invio della richiesta. Riprova tra qualche minuto.",
       },
       { status: 500 },
     );
@@ -112,24 +122,27 @@ function validateAttachments(files: File[]) {
 
   for (const file of files) {
     if (!allowedAttachmentTypes.has(file.type)) {
-      return `Formato allegato non supportato: ${file.name}. Usa PDF, JPG, PNG o WEBP.`;
+      return `Formato allegato non supportato: ${file.name}. Usa PDF, JPG, JPEG o PNG.`;
     }
     if (file.size > maxFileSize) {
-      return `${file.name} supera il limite di 8 MB.`;
+      return `${file.name} supera il limite di 15 MB.`;
     }
   }
 
   return null;
 }
 
-async function buildEmailAttachments(files: File[]) {
+async function buildEmailAttachments(
+  files: File[],
+  storedAttachments: ConsultationAttachment[],
+) {
   let totalBytes = 0;
   const attachments: ConsultationEmailAttachment[] = [];
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     totalBytes += file.size;
-    const metadata = fileMetadata(file);
-    if (totalBytes <= maxEmailAttachmentBytes) {
+    const metadata = storedAttachments[index] ?? fileMetadata(file);
+    if (metadata.storageStatus !== "stored" && totalBytes <= maxEmailAttachmentBytes) {
       const buffer = Buffer.from(await file.arrayBuffer());
       attachments.push({
         ...metadata,

@@ -31,6 +31,7 @@ export function ConsultationForm() {
   const [result, setResult] = useState<ConsultationResponse | null>(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const screeningIdLabel = useMemo(
     () => (screeningId ? `Screening collegato: ${screeningId}` : ""),
@@ -39,12 +40,13 @@ export function ConsultationForm() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setError("");
     setResult(null);
     setIsSubmitting(true);
 
     try {
-      const formData = new FormData(event.currentTarget);
+      const formData = new FormData(form);
       if (screeningId) formData.set("screeningId", screeningId);
 
       const response = await fetch("/api/consultation", {
@@ -56,18 +58,17 @@ export function ConsultationForm() {
 
       if (!response.ok || !payload.ok) {
         throw new Error(
-          payload.error || "Non è stato possibile inviare la richiesta.",
+          payload.error ||
+            "Si è verificato un problema durante l’invio della richiesta. Riprova tra qualche minuto.",
         );
       }
 
       setResult(payload);
-      event.currentTarget.reset();
+      form.reset();
+      setSelectedFiles([]);
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Non è stato possibile inviare la richiesta.",
-      );
+      console.error("Consultation form submit failed", { submitError });
+      setError("Si è verificato un problema durante l’invio della richiesta. Riprova tra qualche minuto.");
     } finally {
       setIsSubmitting(false);
     }
@@ -85,18 +86,8 @@ export function ConsultationForm() {
             <div>
               <p className="font-semibold">Richiesta consulenza inviata</p>
               <p>
-                ID richiesta:{" "}
-                <span className="font-mono">
-                  {result.consultationId ?? "non salvato"}
-                </span>
+                Ti contatteremo il prima possibile all’indirizzo email indicato.
               </p>
-              {(!result.saved || !result.emailSent) && (
-                <p className="mt-2 text-amber-800">
-                  Invio ricevuto, ma alcune integrazioni non sono ancora
-                  configurate: Supabase {result.saved ? "OK" : "non attivo"},
-                  email {result.emailSent ? "OK" : "non attiva"}.
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -176,10 +167,29 @@ export function ConsultationForm() {
               type="file"
               name="attachments"
               multiple
-              accept="application/pdf,image/jpeg,image/png,image/webp"
+              accept="application/pdf,image/jpeg,image/png"
+              onChange={(event) =>
+                setSelectedFiles(Array.from(event.currentTarget.files ?? []))
+              }
               className="sr-only"
             />
           </label>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            Puoi allegare fino a 10 file in formato PDF, JPG, JPEG o PNG. Ogni
+            file può pesare massimo 15 MB.
+          </p>
+          {selectedFiles.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-xs text-slate-600">
+              {selectedFiles.map((file) => (
+                <li
+                  key={`${file.name}-${file.size}-${file.lastModified}`}
+                  className="rounded-lg bg-slate-50 px-3 py-2"
+                >
+                  {file.name} · {formatFileSize(file.size)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Field>
       </div>
 
@@ -206,6 +216,11 @@ export function ConsultationForm() {
       </Button>
     </form>
   );
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function Field({

@@ -21,11 +21,14 @@ export async function sendConsultationEmail(
 
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const to = process.env.CONSULTATION_TO_EMAIL?.trim();
-  const from =
-    process.env.CONSULTATION_FROM_EMAIL?.trim() ||
-    "MulteOnline <onboarding@resend.dev>";
+  const from = process.env.CONSULTATION_FROM_EMAIL?.trim();
 
-  if (!apiKey || !to) {
+  if (!apiKey || !to || !from) {
+    console.warn("Consultation email not configured", {
+      hasResendApiKey: Boolean(apiKey),
+      hasToEmail: Boolean(to),
+      hasFromEmail: Boolean(from),
+    });
     return { sent: false, reason: "not_configured", providerId: null } as const;
   }
 

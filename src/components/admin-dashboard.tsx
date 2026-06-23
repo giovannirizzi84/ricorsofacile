@@ -27,18 +27,24 @@ type AdminStats = {
     revenueTodayCents: number;
   };
   consultations: {
-    total: number;
-    new: number;
-    latest: Array<{
-      id: string;
-      created_at: string;
+	    total: number;
+	    new: number;
+	    latest: Array<{
+	      id: string;
+	      created_at: string;
 	      first_name: string;
 	      last_name: string;
 	      email: string;
 	      consultation_type: string;
+	      screening_id: string | null;
+	      attachments_json: Array<{
+	        name: string;
+	        size: number;
+	        downloadUrl?: string;
+	      }>;
 	      status: ConsultationStatus;
-    }>;
-  };
+	    }>;
+	  };
   economics: {
     stripeRevenueTotalCents: number;
     screeningSold: number;
@@ -173,23 +179,33 @@ export function AdminDashboard({ secret }: { secret: string }) {
         <h2 className="text-xl font-semibold">Ultime richieste consulenza</h2>
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
-              <tr>
-	                <th className="py-3">Nome</th>
+	            <thead className="text-xs uppercase text-slate-500">
+	              <tr>
+	                <th className="py-3">Data</th>
+	                <th>Nome</th>
+	                <th>Cognome</th>
 	                <th>Email</th>
 	                <th>Tipo</th>
+	                <th>Screening</th>
+	                <th>Allegati</th>
 	                <th>Stato</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {stats.consultations.latest.map((request) => (
-                <tr key={request.id}>
-                  <td className="py-3">
-                    {request.first_name} {request.last_name}
-	                  </td>
+	              </tr>
+	            </thead>
+	            <tbody className="divide-y">
+	              {stats.consultations.latest.map((request) => (
+	                <tr key={request.id}>
+	                  <td className="py-3">{formatDate(request.created_at)}</td>
+	                  <td>{request.first_name}</td>
+	                  <td>{request.last_name}</td>
 	                  <td>{request.email}</td>
 	                  <td>{request.consultation_type}</td>
-                  <td>
+	                  <td className="font-mono text-xs">
+	                    {request.screening_id ?? "Non collegato"}
+	                  </td>
+	                  <td>
+	                    <AttachmentLinks attachments={request.attachments_json ?? []} />
+	                  </td>
+	                  <td>
                     <select
                       value={request.status}
                       className="rounded-lg border px-2 py-1"
@@ -259,11 +275,46 @@ function AdminPanel({
   );
 }
 
+function AttachmentLinks({
+  attachments,
+}: {
+  attachments: Array<{ name: string; size: number; downloadUrl?: string }>;
+}) {
+  if (attachments.length === 0) return <span className="text-slate-400">Nessuno</span>;
+
+  return (
+    <div className="space-y-1">
+      {attachments.map((attachment, index) =>
+        attachment.downloadUrl ? (
+          <a
+            key={`${attachment.name}-${index}`}
+            href={attachment.downloadUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block text-[#0f756d] underline underline-offset-2"
+          >
+            {attachment.name} ({formatFileSize(attachment.size)})
+          </a>
+        ) : (
+          <span key={`${attachment.name}-${index}`} className="block text-slate-500">
+            {attachment.name} ({formatFileSize(attachment.size)})
+          </span>
+        ),
+      )}
+    </div>
+  );
+}
+
 function formatEuro(cents: number) {
   return new Intl.NumberFormat("it-IT", {
     style: "currency",
     currency: "EUR",
   }).format(cents / 100);
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDate(value: string) {

@@ -12,7 +12,7 @@ test("consultation-email.test", async () => {
       firstName: "Mario",
       lastName: "Rossi",
       email: "mario@example.com",
-      phone: "+393330000000",
+      phone: "Non richiesto",
       consultationType: "Videochiamata",
       noticeNumber: "TEST-123",
       authority: "Comune di Test",
