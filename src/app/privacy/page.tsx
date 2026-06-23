@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       sections={[
         {
           title: "1. Titolare del trattamento",
-          text: "Il titolare del trattamento è MulteOnline. In attesa della completa formalizzazione societaria, le richieste privacy possono essere inviate all’indirizzo email indicato nella pagina Contatti. I dati identificativi completi del titolare saranno aggiornati non appena disponibili.",
+          text: "Il titolare del trattamento è MulteOnline. In attesa della completa formalizzazione societaria, le richieste privacy possono essere inviate a multeonlineinfo@gmail.com. I dati identificativi completi del titolare saranno aggiornati non appena disponibili.",
         },
         {
           title: "2. Dati raccolti",
@@ -60,7 +60,7 @@ export default function PrivacyPage() {
         },
         {
           title: "12. Modalità di contatto",
-          text: "Per richieste privacy, assistenza o cancellazione dati è possibile utilizzare la pagina Contatti o scrivere all’indirizzo email di supporto indicato sul sito. Per consentire l’identificazione della richiesta, può essere necessario indicare l’email usata nel pagamento o l’identificativo del report.",
+          text: "Per richieste privacy, assistenza o cancellazione dati è possibile scrivere a multeonlineinfo@gmail.com. Per consentire l’identificazione della richiesta, può essere necessario indicare l’email usata nel pagamento o l’identificativo del report.",
         },
       ]}
     />

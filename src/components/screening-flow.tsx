@@ -524,7 +524,13 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
   );
 }
 
-export function ScreeningReportView({ report }: { report: ScreeningReport }) {
+export function ScreeningReportView({
+  report,
+  screeningId,
+}: {
+  report: ScreeningReport;
+  screeningId?: string | null;
+}) {
   const accent =
     report.outcome === "Alto interesse all’approfondimento"
       ? "border-amber-200 bg-amber-50/40 text-amber-950"
@@ -687,7 +693,7 @@ export function ScreeningReportView({ report }: { report: ScreeningReport }) {
               className="rounded-full bg-[#103d3a] text-white hover:bg-[#174c48]"
               asChild
             >
-              <Link href={report.economicConvenience.ctaHref}>
+              <Link href={consultationHref(screeningId)}>
                 {report.economicConvenience.ctaLabel}
               </Link>
             </Button>
@@ -747,16 +753,20 @@ export function ScreeningReportView({ report }: { report: ScreeningReport }) {
           <div className="rounded-2xl bg-[#103d3a] p-6 text-white">
             <Scale className="size-6 text-lime-300" />
             <h3 className="mt-5 text-lg font-semibold">
-              Prossimo step consigliato
+              Vuoi una valutazione professionale?
             </h3>
             <p className="mt-3 text-sm leading-6 text-white/65">
-              {report.nextStep}
+              Richiedi una consulenza personalizzata: il team potrà verificare
+              il verbale, gli allegati e la convenienza dell’eventuale
+              approfondimento.
             </p>
             <Button
               className="mt-6 w-full rounded-full bg-lime-300 text-[#153a35] hover:bg-lime-200"
               asChild
             >
-              <Link href="/consulenza">Richiedi una revisione</Link>
+              <Link href={consultationHref(screeningId)}>
+                Richiedi consulenza
+              </Link>
             </Button>
           </div>
 
@@ -897,4 +907,10 @@ function ConfidenceBadge({
       {confidence}
     </Badge>
   );
+}
+
+function consultationHref(screeningId?: string | null) {
+  return screeningId
+    ? `/consulenza?screeningId=${encodeURIComponent(screeningId)}`
+    : "/consulenza";
 }

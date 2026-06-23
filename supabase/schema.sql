@@ -33,3 +33,30 @@ create index if not exists screenings_payment_id_idx
 
 create index if not exists screenings_email_idx
   on public.screenings (email);
+
+create table if not exists public.consultation_requests (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  first_name text not null,
+  last_name text not null,
+  email text not null,
+  phone text not null,
+  consultation_type text not null,
+  notice_number text,
+  authority text,
+  amount text,
+  description text not null,
+  preferred_time text,
+  screening_id uuid references public.screenings(id) on delete set null,
+  attachments_json jsonb not null default '[]'::jsonb,
+  status text not null default 'new' check (status in ('new', 'contacted', 'closed'))
+);
+
+create index if not exists consultation_requests_created_at_idx
+  on public.consultation_requests (created_at desc);
+
+create index if not exists consultation_requests_status_idx
+  on public.consultation_requests (status);
+
+create index if not exists consultation_requests_screening_id_idx
+  on public.consultation_requests (screening_id);

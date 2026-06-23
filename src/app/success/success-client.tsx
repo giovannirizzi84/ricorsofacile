@@ -15,6 +15,7 @@ import type { ScreeningReport } from "@/lib/screening-report";
 
 type AnalyzePayload = {
   report?: ScreeningReport;
+  screeningId?: string | null;
   error?: string;
 };
 
@@ -23,6 +24,7 @@ export function SuccessClient() {
   const sessionId = searchParams.get("session_id") ?? "";
   const started = useRef(false);
   const [report, setReport] = useState<ScreeningReport | null>(null);
+  const [screeningId, setScreeningId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Verifica pagamento in corso…");
 
@@ -61,6 +63,7 @@ export function SuccessClient() {
 
       await deletePendingScreening(currentSessionId);
       setReport(payload.report);
+      setScreeningId(payload.screeningId ?? null);
       setStatus("Analisi completata");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (analysisError) {
@@ -83,7 +86,7 @@ export function SuccessClient() {
     return (
       <section className="bg-[#f4f7f6] py-10 sm:py-14">
         <div className="page-shell">
-          <ScreeningReportView report={report} />
+          <ScreeningReportView report={report} screeningId={screeningId} />
         </div>
       </section>
     );

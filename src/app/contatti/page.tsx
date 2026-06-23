@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Mail, Phone, Send } from "lucide-react";
+import { Mail, Send } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,8 +12,7 @@ export const metadata: Metadata = {
     "Contatta MulteOnline per supporto sullo screening AI, pagamenti, report e servizi professionali.",
 };
 
-const supportEmail = "supporto@multeonline.it";
-const supportPhone = "+39 02 1234 5678";
+const supportEmail = "multeonlineinfo@gmail.com";
 
 export default function ContactsPage() {
   return (
@@ -47,12 +46,10 @@ export default function ContactsPage() {
                   value={supportEmail}
                   href={`mailto:${supportEmail}`}
                 />
-                <ContactItem
-                  icon={Phone}
-                  label="Numero assistenza"
-                  value={supportPhone}
-                  href={`tel:${supportPhone.replace(/\s/g, "")}`}
-                />
+                <p className="rounded-xl bg-[#f4f7f6] p-4 text-sm leading-6 text-slate-600">
+                  Per assistenza, richieste di consulenza o informazioni sui
+                  servizi è possibile contattarci all’indirizzo email indicato.
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -44,7 +44,7 @@ export default function TermsPage() {
         },
         {
           title: "8. Politica rimborsi",
-          text: "Poiché lo Screening AI è un servizio digitale erogato dopo il pagamento e avviato su richiesta dell’utente, il rimborso non è normalmente previsto una volta generato il report. In caso di errore tecnico che impedisca completamente l’erogazione del servizio, l’utente può contattare l’assistenza per una verifica del caso.",
+          text: "Poiché lo Screening AI è un servizio digitale erogato dopo il pagamento e avviato su richiesta dell’utente, il rimborso non è normalmente previsto una volta generato il report. In caso di errore tecnico che impedisca completamente l’erogazione del servizio, l’utente può scrivere a multeonlineinfo@gmail.com per una verifica del caso.",
         },
         {
           title: "9. Servizi successivi e costi esterni",

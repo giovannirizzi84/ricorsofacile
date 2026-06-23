@@ -28,7 +28,7 @@ export function SiteHeader() {
         </nav>
         <div className="hidden items-center gap-3 lg:flex">
           <Button variant="ghost" asChild>
-            <Link href="/area-utente">Area utente</Link>
+            <Link href="/consulenza">Richiedi consulenza</Link>
           </Button>
           <Button className="rounded-full bg-[#103d3a] px-5 hover:bg-[#0b302e]" asChild>
             <Link href="/analizza">Analizza la tua multa</Link>
@@ -51,8 +51,8 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
-            <Link href="/area-utente" onClick={() => setOpen(false)} className="rounded-lg px-3 py-3 font-medium hover:bg-slate-50">
-              Area utente
+            <Link href="/consulenza" onClick={() => setOpen(false)} className="rounded-lg px-3 py-3 font-medium hover:bg-slate-50">
+              Richiedi consulenza
             </Link>
             <Button className="mt-3 h-12 rounded-full bg-[#103d3a]" asChild>
               <Link href="/analizza" onClick={() => setOpen(false)}>Analizza la tua multa</Link>
