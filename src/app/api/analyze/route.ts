@@ -42,7 +42,9 @@ export async function POST(request: Request) {
     if (!paymentValidation.valid) {
       console.warn("Analysis blocked because payment is not valid", {
         analysisId,
-        reason: paymentValidation.reason,
+        checkoutSessionId: paymentSessionId,
+        paymentVerified: false,
+        analysisBlockedReason: paymentValidation.reason,
       });
       return NextResponse.json(
         {
@@ -52,6 +54,12 @@ export async function POST(request: Request) {
         { status: 402 },
       );
     }
+    console.info("Payment verified for analysis", {
+      analysisId,
+      checkoutSessionId: paymentSessionId,
+      paymentVerified: true,
+      analysisStarted: true,
+    });
 
     const caseData: FineCaseData = {
       notificationDate: readText(formData, "notificationDate"),

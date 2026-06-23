@@ -20,7 +20,6 @@ export async function POST(request: Request) {
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
       line_items: [
         {
           price_data: {
@@ -37,6 +36,12 @@ export async function POST(request: Request) {
       metadata: {
         service: "screening_ai",
         documentCount: String(payload.documentCount ?? 0),
+      },
+      payment_intent_data: {
+        metadata: {
+          service: "screening_ai",
+          documentCount: String(payload.documentCount ?? 0),
+        },
       },
       consent_collection: {
         terms_of_service: "required",
