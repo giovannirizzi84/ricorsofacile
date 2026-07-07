@@ -6,7 +6,7 @@ import { PageHero } from "@/components/page-hero";
 export default function ConsultationPage() {
   return (
     <>
-      <PageHero eyebrow="Supporto personalizzato" title="Prenota una consulenza" description="Raccontaci il caso e allega i documenti. La richiesta verrà inoltrata al team MulteOnline per una valutazione professionale." />
+      <PageHero eyebrow="Supporto personalizzato" title="Richiedi consulenza" description="Compila il form e ti ricontatteremo per valutare il caso. La richiesta verrà inoltrata al team MulteOnline per una valutazione professionale." />
       <section className="section-space">
         <div className="page-shell grid items-start gap-10 lg:grid-cols-[1fr_340px]">
           <Suspense fallback={<div className="rounded-3xl border bg-white p-8 shadow-soft">Caricamento form...</div>}>

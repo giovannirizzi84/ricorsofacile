@@ -53,6 +53,12 @@ type CheckoutPayload = {
   error?: string;
 };
 
+type AnalyzePayload = {
+  report?: ScreeningReport;
+  screeningId?: string | null;
+  error?: string;
+};
+
 const initialCaseData: CaseData = {
   notificationDate: "",
   authority: "",
@@ -60,10 +66,12 @@ const initialCaseData: CaseData = {
   violationType: "",
 };
 
-export function ScreeningFlow() {
+export function ScreeningFlow({ freeMode = false }: { freeMode?: boolean }) {
   const [step, setStep] = useState(0);
   const [caseData, setCaseData] = useState(initialCaseData);
   const [files, setFiles] = useState<File[]>([]);
+  const [report, setReport] = useState<ScreeningReport | null>(null);
+  const [screeningId, setScreeningId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState(
     "Analisi del documento in corso…",
@@ -93,6 +101,11 @@ export function ScreeningFlow() {
       return;
     }
 
+    if (freeMode) {
+      await startFreeAnalysis();
+      return;
+    }
+
     setError("");
     setProcessing(true);
     setProcessingStage("Preparazione pagamento sicuro…");
@@ -116,12 +129,50 @@ export function ScreeningFlow() {
         createdAt: new Date().toISOString(),
       });
 
-      window.location.href = payload.checkoutUrl;
+      window.location.assign(payload.checkoutUrl);
     } catch (analysisError) {
       setError(
         analysisError instanceof Error
           ? analysisError.message
           : "Non è stato possibile avviare il pagamento.",
+      );
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function startFreeAnalysis() {
+    setError("");
+    setProcessing(true);
+    setProcessingStage("Analisi gratuita in corso…");
+
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      formData.append("notificationDate", caseData.notificationDate);
+      formData.append("authority", caseData.authority);
+      formData.append("amount", caseData.amount);
+      formData.append("violationType", caseData.violationType);
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as AnalyzePayload;
+
+      if (!response.ok || !payload.report) {
+        throw new Error(payload.error || "Analisi non completata.");
+      }
+
+      setReport(payload.report);
+      setScreeningId(payload.screeningId ?? null);
+      setStep(3);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (analysisError) {
+      setError(
+        analysisError instanceof Error
+          ? analysisError.message
+          : "Non è stato possibile completare l’analisi.",
       );
     } finally {
       setProcessing(false);
@@ -156,7 +207,13 @@ export function ScreeningFlow() {
           </div>
         </div>
 
-        {step < 3 ? (
+        {report ? (
+          <ScreeningReportView
+            report={report}
+            screeningId={screeningId}
+            paymentMode={freeMode ? "free" : "paid"}
+          />
+        ) : step < 3 ? (
           <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
             <Card className="border-0 shadow-soft">
               <CardContent className="p-6 sm:p-9">
@@ -296,8 +353,22 @@ export function ScreeningFlow() {
                     <StepTitle
                       icon={FileSearch}
                       title="Avvia l’analisi preliminare"
-                      text="Il documento verrà esaminato automaticamente per individuare le principali informazioni contenute nel verbale e generare un report preliminare con elementi, termini e aspetti che potrebbero meritare approfondimento."
+                      text={
+                        freeMode
+                          ? "Carica il verbale e ricevi gratuitamente uno screening preliminare in pochi minuti. Nessun pagamento richiesto durante la fase di lancio."
+                          : "Il documento verrà esaminato automaticamente per individuare le principali informazioni contenute nel verbale e generare un report preliminare con elementi, termini e aspetti che potrebbero meritare approfondimento."
+                      }
                     />
+                    {freeMode && (
+                      <div className="mt-6 flex flex-wrap gap-3">
+                        <Badge className="bg-lime-100 text-[#153a35] hover:bg-lime-100">
+                          MulteOnline – Screening AI gratuito
+                        </Badge>
+                        <Badge className="bg-[#e6f2ee] text-[#0f756d] hover:bg-[#e6f2ee]">
+                          Nessun pagamento richiesto
+                        </Badge>
+                      </div>
+                    )}
                     <div className="mt-8 rounded-2xl border bg-[#f5f8f7] p-5">
                       <div className="flex items-start gap-4">
                         <Sparkles className="mt-1 size-5 shrink-0 text-[#0f756d]" />
@@ -334,7 +405,7 @@ export function ScreeningFlow() {
                       />
                     </div>
                     <p className="mt-5 text-xs leading-6 text-slate-500">
-                      Procedendo al pagamento accetti i{" "}
+                      {freeMode ? "Procedendo all’analisi gratuita accetti i " : "Procedendo al pagamento accetti i "}
                       <Link
                         href="/termini"
                         className="font-medium text-[#0f756d] underline-offset-4 hover:underline"
@@ -368,7 +439,11 @@ export function ScreeningFlow() {
                         !disclaimerAccepted ||
                         processing
                       }
-                      nextLabel="Paga 0,99 € e avvia analisi"
+                      nextLabel={
+                        freeMode
+                          ? "Verifica gratuitamente la tua multa"
+                          : "Paga 0,99 € e avvia analisi"
+                      }
                     />
                   </div>
                 )}
@@ -385,8 +460,9 @@ export function ScreeningFlow() {
             <LoaderCircle className="mx-auto size-12 animate-spin text-lime-300" />
             <h2 className="mt-6 text-2xl font-semibold">{processingStage}</h2>
             <p className="mt-3 text-sm leading-6 text-white/65">
-              Verrai reindirizzato a Stripe Checkout. Dopo il pagamento
-              tornerai su MulteOnline per generare il report.
+              {freeMode
+                ? "Stiamo leggendo il verbale e preparando il report preliminare. Può richiedere alcuni secondi."
+                : "Verrai reindirizzato a Stripe Checkout. Dopo il pagamento tornerai su MulteOnline per generare il report."}
             </p>
           </div>
         </div>
@@ -527,9 +603,11 @@ function AsideSummary({ step, files }: { step: number; files: number }) {
 export function ScreeningReportView({
   report,
   screeningId,
+  paymentMode,
 }: {
   report: ScreeningReport;
   screeningId?: string | null;
+  paymentMode?: "free" | "paid";
 }) {
   const accent =
     report.outcome === "Alto interesse all’approfondimento"
@@ -545,6 +623,11 @@ export function ScreeningReportView({
           <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
             <CheckCircle2 className="size-3.5" /> Analisi completata
           </Badge>
+          {paymentMode === "free" && (
+            <Badge className="ml-2 bg-lime-100 text-[#153a35] hover:bg-lime-100">
+              Screening gratuito
+            </Badge>
+          )}
           <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
             Il tuo report preliminare
           </h1>

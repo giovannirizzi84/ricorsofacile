@@ -18,7 +18,10 @@ type AdminStats = {
       category: string;
       fineAmount: string;
       provider: string;
+      paymentMode: "free" | "paid" | "unknown";
     }>;
+    free: number;
+    paid: number;
   };
   payments: {
     total: number;
@@ -29,6 +32,7 @@ type AdminStats = {
   consultations: {
 	    total: number;
 	    new: number;
+	    fromFreeScreenings: number;
 	    latest: Array<{
 	      id: string;
 	      created_at: string;
@@ -48,6 +52,7 @@ type AdminStats = {
   economics: {
     stripeRevenueTotalCents: number;
     screeningSold: number;
+    freeScreenings: number;
     consultationRequests: number;
     conversionRate: number;
   };
@@ -137,11 +142,17 @@ export function AdminDashboard({ secret }: { secret: string }) {
       <section className="grid gap-4 md:grid-cols-4">
         <Metric label="Screening totali" value={stats.screenings.total} />
         <Metric label="Screening oggi" value={stats.screenings.today} />
+        <Metric label="Screening gratuiti" value={stats.screenings.free} />
+        <Metric label="Screening pagati" value={stats.screenings.paid} />
         <Metric label="Pagamenti totali" value={stats.payments.total} />
         <Metric label="Ricavi totali" value={formatEuro(stats.payments.revenueTotalCents)} />
         <Metric label="Ricavi oggi" value={formatEuro(stats.payments.revenueTodayCents)} />
         <Metric label="Richieste consulenza" value={stats.consultations.total} />
         <Metric label="Nuove richieste" value={stats.consultations.new} />
+        <Metric
+          label="Consulenze da free"
+          value={stats.consultations.fromFreeScreenings}
+        />
         <Metric label="Conversion rate" value={`${stats.economics.conversionRate}%`} />
       </section>
 
@@ -157,6 +168,7 @@ export function AdminDashboard({ secret }: { secret: string }) {
                 <th>Categoria</th>
                 <th>Importo multa</th>
                 <th>Provider</th>
+                <th>Modalità</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -168,6 +180,15 @@ export function AdminDashboard({ secret }: { secret: string }) {
                   <td>{screening.category}</td>
                   <td>{screening.fineAmount}</td>
                   <td>{screening.provider}</td>
+                  <td>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                      {screening.paymentMode === "free"
+                        ? "free"
+                        : screening.paymentMode === "paid"
+                          ? "paid"
+                          : "n/d"}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -234,6 +255,7 @@ export function AdminDashboard({ secret }: { secret: string }) {
           value={formatEuro(stats.economics.stripeRevenueTotalCents)}
         />
         <Metric label="Screening venduti" value={stats.economics.screeningSold} />
+        <Metric label="Screening gratuiti" value={stats.economics.freeScreenings} />
         <Metric
           label="Consulenze richieste"
           value={stats.economics.consultationRequests}

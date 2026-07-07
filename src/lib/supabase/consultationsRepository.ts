@@ -2,6 +2,7 @@ import {
   getSupabaseServiceClient,
   isSupabaseConfigured,
 } from "./client.ts";
+import { listScreeningMemoryStoreForTests } from "./screeningsRepository.ts";
 
 export type ConsultationStatus = "new" | "contacted" | "closed";
 
@@ -59,7 +60,10 @@ export type AdminStats = {
       category: string;
       fineAmount: string;
       provider: string;
+      paymentMode: "free" | "paid" | "unknown";
     }>;
+    free: number;
+    paid: number;
   };
   payments: {
     total: number;
@@ -70,11 +74,13 @@ export type AdminStats = {
   consultations: {
     total: number;
     new: number;
+    fromFreeScreenings: number;
     latest: ConsultationRequestRow[];
   };
   economics: {
     stripeRevenueTotalCents: number;
     screeningSold: number;
+    freeScreenings: number;
     consultationRequests: number;
     conversionRate: number;
   };
@@ -177,13 +183,13 @@ export async function loadAdminStats(): Promise<
   ] = await Promise.all([
     supabase
       .from("screenings")
-      .select("id,created_at,confidence,provider,report_json")
+      .select("id,payment_id,created_at,confidence,provider,report_json")
       .order("created_at", { ascending: false })
       .limit(50),
     supabase
       .from("payments")
       .select("id,amount,currency,status,created_at")
-      .eq("status", "paid"),
+      .in("status", ["paid", "free"]),
     supabase
       .from("consultation_requests")
       .select("*")
@@ -200,12 +206,30 @@ export async function loadAdminStats(): Promise<
   const consultations = await withSignedAttachmentUrls(
     (consultationsResult.data ?? []) as ConsultationRequestRow[],
   );
+  const paymentModeById = new Map(
+    payments.map((payment) => [
+      String(payment.id),
+      paymentModeFromPayment(payment),
+    ]),
+  );
+  const screeningPaymentModeById = new Map(
+    screenings.map((screening) => [
+      String(screening.id),
+      paymentModeById.get(String(screening.payment_id ?? "")) ?? "unknown",
+    ]),
+  );
+  const paidPayments = payments.filter(
+    (payment) => paymentModeFromPayment(payment) === "paid",
+  );
+  const freePayments = payments.filter(
+    (payment) => paymentModeFromPayment(payment) === "free",
+  );
 
-  const revenueTotalCents = payments.reduce(
+  const revenueTotalCents = paidPayments.reduce(
     (sum, payment) => sum + Number(payment.amount ?? 0),
     0,
   );
-  const paymentsToday = payments.filter((payment) =>
+  const paymentsToday = paidPayments.filter((payment) =>
     String(payment.created_at ?? "") >= todayStart,
   );
   const screeningsToday = screenings.filter((screening) =>
@@ -231,10 +255,21 @@ export async function loadAdminStats(): Promise<
             "amount",
           ]),
           provider: String(screening.provider ?? ""),
+          paymentMode:
+            paymentModeById.get(String(screening.payment_id ?? "")) ??
+            "unknown",
         })),
+        free: screenings.filter(
+          (screening) =>
+            paymentModeById.get(String(screening.payment_id ?? "")) === "free",
+        ).length,
+        paid: screenings.filter(
+          (screening) =>
+            paymentModeById.get(String(screening.payment_id ?? "")) === "paid",
+        ).length,
       },
       payments: {
-        total: payments.length,
+        total: paidPayments.length,
         today: paymentsToday.length,
         revenueTotalCents,
         revenueTodayCents: paymentsToday.reduce(
@@ -245,15 +280,21 @@ export async function loadAdminStats(): Promise<
       consultations: {
         total: consultations.length,
         new: consultations.filter((item) => item.status === "new").length,
+        fromFreeScreenings: consultations.filter(
+          (item) =>
+            item.screening_id &&
+            screeningPaymentModeById.get(item.screening_id) === "free",
+        ).length,
         latest: consultations,
       },
       economics: {
         stripeRevenueTotalCents: revenueTotalCents,
-        screeningSold: payments.length,
+        screeningSold: paidPayments.length,
+        freeScreenings: freePayments.length,
         consultationRequests: consultations.length,
         conversionRate:
-          payments.length > 0
-            ? Math.round((consultations.length / payments.length) * 10000) / 100
+          screenings.length > 0
+            ? Math.round((consultations.length / screenings.length) * 10000) / 100
             : 0,
       },
     },
@@ -360,31 +401,103 @@ function buildMemoryStats(): AdminStats {
   const consultations = Array.from(memoryConsultations.values()).sort((a, b) =>
     b.created_at.localeCompare(a.created_at),
   );
+  const { payments, screenings } = listScreeningMemoryStoreForTests();
+  const paymentModeById = new Map(
+    payments.map((payment) => [payment.id, paymentModeFromPayment(payment)]),
+  );
+  const screeningPaymentModeById = new Map(
+    screenings.map((screening) => [
+      screening.id,
+      paymentModeById.get(screening.payment_id ?? "") ?? "unknown",
+    ]),
+  );
+  const paidPayments = payments.filter(
+    (payment) => paymentModeFromPayment(payment) === "paid",
+  );
+  const freePayments = payments.filter(
+    (payment) => paymentModeFromPayment(payment) === "free",
+  );
+  const todayStart = startOfTodayIso();
+  const screeningsToday = screenings.filter(
+    (screening) => screening.created_at >= todayStart,
+  );
+  const paidPaymentsToday = paidPayments.filter(
+    (payment) => String(payment.createdAt ?? "") >= todayStart,
+  );
+  const revenueTotalCents = paidPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount ?? 0),
+    0,
+  );
 
   return {
     screenings: {
-      total: 0,
-      today: 0,
-      latest: [],
+      total: screenings.length,
+      today: screeningsToday.length,
+      latest: screenings
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 50)
+        .map((screening) => ({
+          id: screening.id,
+          createdAt: screening.created_at,
+          confidence: screening.confidence,
+          category: readReportValue(screening.report_json, [
+            "violationClassification",
+            "value",
+          ]),
+          fineAmount: readReportValue(screening.report_json, [
+            "identifiedData",
+            "amount",
+          ]),
+          provider: screening.provider,
+          paymentMode:
+            paymentModeById.get(screening.payment_id ?? "") ?? "unknown",
+        })),
+      free: screenings.filter(
+        (screening) =>
+          paymentModeById.get(screening.payment_id ?? "") === "free",
+      ).length,
+      paid: screenings.filter(
+        (screening) =>
+          paymentModeById.get(screening.payment_id ?? "") === "paid",
+      ).length,
     },
     payments: {
-      total: 0,
-      today: 0,
-      revenueTotalCents: 0,
-      revenueTodayCents: 0,
+      total: paidPayments.length,
+      today: paidPaymentsToday.length,
+      revenueTotalCents,
+      revenueTodayCents: paidPaymentsToday.reduce(
+        (sum, payment) => sum + Number(payment.amount ?? 0),
+        0,
+      ),
     },
     consultations: {
       total: consultations.length,
       new: consultations.filter((item) => item.status === "new").length,
+      fromFreeScreenings: consultations.filter(
+        (item) =>
+          item.screening_id &&
+          screeningPaymentModeById.get(item.screening_id) === "free",
+      ).length,
       latest: consultations,
     },
     economics: {
-      stripeRevenueTotalCents: 0,
-      screeningSold: 0,
+      stripeRevenueTotalCents: revenueTotalCents,
+      screeningSold: paidPayments.length,
+      freeScreenings: freePayments.length,
       consultationRequests: consultations.length,
-      conversionRate: 0,
+      conversionRate:
+        screenings.length > 0
+          ? Math.round((consultations.length / screenings.length) * 10000) / 100
+          : 0,
     },
   };
+}
+
+function paymentModeFromPayment(payment: { status?: unknown; amount?: unknown }) {
+  const status = String(payment.status ?? "").toLowerCase();
+  if (status === "free") return "free" as const;
+  if (status === "paid" || Number(payment.amount ?? 0) > 0) return "paid" as const;
+  return "unknown" as const;
 }
 
 function readReportValue(value: unknown, path: string[]) {

@@ -7,6 +7,7 @@ import {
   isPaymentBypassAllowedForTests,
   verifyPaidCheckoutSession,
 } from "../../../lib/payments/paymentTracking.ts";
+import { isFreeScreeningMode } from "../../../lib/payments/freeScreeningMode.ts";
 import type { FineCaseData } from "../../../lib/rules/fineAnalysisRules.ts";
 import { persistScreening } from "../../../lib/supabase/screeningsRepository.ts";
 
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     const paymentSessionId = readText(formData, "paymentSessionId", 200);
-    const paymentValidation = await validatePayment(paymentSessionId);
+    const paymentValidation = await validatePayment(paymentSessionId, analysisId);
     if (!paymentValidation.valid) {
       console.warn("Analysis blocked because payment is not valid", {
         analysisId,
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       analysisId,
       checkoutSessionId: paymentSessionId,
       paymentVerified: true,
+      paymentMode: paymentValidation.paymentMode,
       analysisStarted: true,
     });
 
@@ -82,7 +84,10 @@ export async function POST(request: Request) {
       report: result.report,
       processing: result.processing,
       screeningId: persistence.screeningId,
-      persistence,
+      persistence: {
+        ...persistence,
+        paymentMode: paymentValidation.paymentMode,
+      },
     });
   } catch (error) {
     console.error("Local screening analysis failed", {
@@ -135,11 +140,28 @@ function validateFiles(files: File[]) {
   return null;
 }
 
-async function validatePayment(paymentSessionId: string) {
+async function validatePayment(paymentSessionId: string, analysisId: string) {
+  if (isFreeScreeningMode()) {
+    return {
+      valid: true,
+      reason: "free_screening_mode",
+      paymentMode: "free",
+      record: {
+        sessionId: `free_${analysisId}`,
+        amount: 0,
+        currency: "eur",
+        createdAt: new Date().toISOString(),
+        status: "free",
+        email: null,
+      },
+    } as const;
+  }
+
   if (isPaymentBypassAllowedForTests()) {
     return {
       valid: true,
       reason: "test_bypass",
+      paymentMode: "paid",
       record: {
         sessionId: "cs_test_bypass",
         amount: 99,
@@ -151,7 +173,11 @@ async function validatePayment(paymentSessionId: string) {
     } as const;
   }
 
-  return verifyPaidCheckoutSession(paymentSessionId);
+  const result = await verifyPaidCheckoutSession(paymentSessionId);
+  return {
+    ...result,
+    paymentMode: result.valid ? "paid" : "unverified",
+  } as const;
 }
 
 async function saveScreeningReport(

@@ -88,7 +88,7 @@ test("success-page-recovers-after-wallet-payment.test", async () => {
 test("no-page-reload-on-apple-pay.test", async () => {
   const source = await readFile(screeningFlowPath, "utf8");
   const saveIndex = source.indexOf("await savePendingScreening");
-  const redirectIndex = source.indexOf("window.location.href = payload.checkoutUrl");
+  const redirectIndex = source.indexOf("window.location.assign(payload.checkoutUrl)");
 
   assert.ok(saveIndex > -1, "Il pending upload deve essere salvato prima del redirect");
   assert.ok(redirectIndex > -1, "Il redirect a Stripe deve essere esplicito");

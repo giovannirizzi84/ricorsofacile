@@ -49,6 +49,18 @@ const memoryScreenings = new Map<
   }
 >();
 
+export function listScreeningMemoryStoreForTests() {
+  return {
+    payments: Array.from(memoryPayments.values()),
+    screenings: Array.from(memoryScreenings.values()),
+  };
+}
+
+export function resetScreeningMemoryStoreForTests() {
+  memoryPayments.clear();
+  memoryScreenings.clear();
+}
+
 export async function persistScreening(
   input: PersistScreeningInput,
 ): Promise<PersistScreeningResult> {

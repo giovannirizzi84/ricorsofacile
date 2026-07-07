@@ -6,10 +6,12 @@ test("api-analyze-richiede-pagamento-valido.test", async () => {
   const previousOpenAIKey = process.env.OPENAI_API_KEY;
   const previousBypass = process.env.STRIPE_ANALYZE_BYPASS;
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousFreeMode = process.env.FREE_SCREENING_MODE;
 
   process.env.OPENAI_API_KEY = "sk-live-like-test-value";
   delete process.env.STRIPE_ANALYZE_BYPASS;
   process.env.NODE_ENV = "production";
+  process.env.FREE_SCREENING_MODE = "false";
 
   try {
     const formData = new FormData();
@@ -34,6 +36,7 @@ test("api-analyze-richiede-pagamento-valido.test", async () => {
     restoreEnv("OPENAI_API_KEY", previousOpenAIKey);
     restoreEnv("STRIPE_ANALYZE_BYPASS", previousBypass);
     restoreEnv("NODE_ENV", previousNodeEnv);
+    restoreEnv("FREE_SCREENING_MODE", previousFreeMode);
   }
 });
 

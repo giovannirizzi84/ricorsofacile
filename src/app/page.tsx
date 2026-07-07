@@ -28,6 +28,7 @@ import {
 } from "@/components/service-packages";
 import { ExternalCostsNotice } from "@/components/external-costs-notice";
 import { faqs } from "@/lib/content";
+import { isFreeScreeningMode } from "@/lib/payments/freeScreeningMode";
 
 const steps = [
   {
@@ -58,6 +59,8 @@ const reportItems = [
 ];
 
 export default function Home() {
+  const freeMode = isFreeScreeningMode();
+
   return (
     <>
       <section className="relative overflow-hidden bg-[#0d3431] text-white">
@@ -68,16 +71,18 @@ export default function Home() {
           <div className="max-w-3xl">
             <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/8 px-4 py-2 text-sm font-medium text-white/85">
               <Sparkles className="size-4 text-lime-300" />
-              Screening AI preliminare di verbali stradali
+              {freeMode
+                ? "MulteOnline – Screening AI gratuito"
+                : "Screening AI preliminare di verbali stradali"}
             </div>
             <h1 className="text-balance text-4xl font-semibold leading-[1.06] tracking-[-0.05em] sm:text-6xl lg:text-[4.25rem]">
               Scopri in 60 secondi se la tua multa presenta{" "}
               <span className="text-lime-300">elementi da approfondire</span>
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-white/72 sm:text-xl">
-              Carica il verbale e ricevi un’analisi preliminare automatizzata
-              con possibili criticità, termini per il ricorso e valutazione
-              della convenienza economica.
+              {freeMode
+                ? "Carica il verbale e ricevi gratuitamente uno screening preliminare in pochi minuti. Nessun pagamento richiesto durante la fase di lancio."
+                : "Carica il verbale e ricevi un’analisi preliminare automatizzata con possibili criticità, termini per il ricorso e valutazione della convenienza economica."}
             </p>
             <Button
               size="lg"
@@ -96,7 +101,7 @@ export default function Home() {
               </span>
               <span className="inline-flex items-center gap-2">
                 <CircleDollarSign className="size-4 text-lime-300" />
-                €0,99 una tantum
+                {freeMode ? "Nessun pagamento richiesto" : "€0,99 una tantum"}
               </span>
               <span className="inline-flex items-center gap-2">
                 <CircleCheck className="size-4 text-lime-300" />
@@ -413,19 +418,44 @@ export default function Home() {
         <div className="page-shell">
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#0f756d]">
-              Soluzioni disponibili
+              {freeMode ? "Screening AI gratuito" : "Soluzioni disponibili"}
             </p>
             <h2 className="mt-4 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
-              Inizia dallo screening, approfondisci solo se serve
+              {freeMode
+                ? "Screening preliminare gratuito in fase di lancio"
+                : "Inizia dallo screening, approfondisci solo se serve"}
             </h2>
             <p className="mt-5 text-lg leading-8 text-slate-600">
-              Scegli il livello di supporto più adatto al tuo caso.
+              {freeMode
+                ? "Carica il verbale e ricevi uno screening preliminare AI senza pagamento. Se vuoi un approfondimento, potrai richiedere consulenza tramite form."
+                : "Scegli il livello di supporto più adatto al tuo caso."}
             </p>
           </div>
 
           <div className="mt-12">
-            <ServicePackages />
-            <ExternalCostsNotice />
+            {freeMode ? (
+              <div className="mx-auto max-w-3xl rounded-[2rem] border border-lime-300 bg-[#f7fce9] p-8 text-center shadow-soft sm:p-10">
+                <span className="inline-flex rounded-full bg-[#103d3a] px-4 py-2 text-xs font-bold text-white">
+                  MulteOnline – Screening AI gratuito
+                </span>
+                <h3 className="mt-5 text-3xl font-semibold tracking-[-0.04em]">
+                  Ottieni gratuitamente uno screening preliminare
+                </h3>
+                <p className="mt-4 text-base leading-7 text-slate-700">
+                  Carica il verbale e ricevi gratuitamente uno screening
+                  preliminare in pochi minuti. Nessun pagamento richiesto
+                  durante la fase di lancio.
+                </p>
+                <Button className="mt-7 rounded-full bg-[#103d3a] text-white hover:bg-[#174c48]" asChild>
+                  <Link href="/analizza">Verifica gratuitamente la tua multa</Link>
+                </Button>
+              </div>
+            ) : (
+              <>
+                <ServicePackages />
+                <ExternalCostsNotice />
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -462,11 +492,13 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="pb-20 sm:pb-24">
-        <div className="page-shell">
-          <PackageGuide />
-        </div>
-      </section>
+      {!freeMode && (
+        <section className="pb-20 sm:pb-24">
+          <div className="page-shell">
+            <PackageGuide />
+          </div>
+        </section>
+      )}
 
       <section className="border-t bg-[#fffdf7] py-8">
         <div className="page-shell flex gap-4 text-sm leading-6 text-slate-600">
